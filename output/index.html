@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安琪</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+}
+
+/* 宠物容器 - 居中显示 */
+#pet-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    z-index: 9999;
+}
+
+#pet-container:active {
+    cursor: grabbing;
+}
+
+/* 宠物精灵 */
+#pet {
+    width: 322px;
+    height: 400px;
+    background-image: url('sprite.webp');
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    background-size: auto;
+    image-rendering: auto;
+    pointer-events: none;
+    transition: transform 0.15s ease-out;
+    transform-origin: center bottom;
+}
+
+/* 压扁回弹动画 */
+#pet.squish {
+    animation: squish 0.5s ease-out;
+}
+
+@keyframes squish {
+    0% { transform: scaleY(1) scaleX(1); }
+    30% { transform: scaleY(0.6) scaleX(1.3); }
+    60% { transform: scaleY(1.15) scaleX(0.9); }
+    100% { transform: scaleY(1) scaleX(1); }
+}
+
+/* 对话气泡 */
+#bubble {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffffff;
+    color: #333;
+    padding: 10px 16px;
+    border-radius: 18px;
+    font-size: 14px;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    margin-bottom: 10px;
+    z-index: 10000;
+}
+
+#bubble.show {
+    opacity: 1;
+}
+
+#bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-top-color: #ffffff;
+}
+
+/* 大便堆积容器 */
+#poop-pile {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 240px;
+    height: 200px;
+    pointer-events: none;
+    z-index: 9998;
+    transform-origin: right bottom; /* 缩放锚点=右下角，配合容器 bottom:0;right:0 定位 */
+}
+
+.poop-item {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background-image: url('poop_icon.webp');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.3));
+}
+
+/* 右键菜单 */
+#context-menu {
+    position: fixed;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    padding: 6px 0;
+    min-width: 140px;
+    display: none;
+    z-index: 10001;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+    font-size: 13px;
+}
+
+#context-menu.show {
+    display: block;
+}
+
+.menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: #333;
+    transition: background 0.15s;
+}
+
+.menu-item:hover {
+    background: #f0f0f0;
+}
+
+.menu-item.divider {
+    height: 1px;
+    background: #e0e0e0;
+    padding: 0;
+    margin: 4px 0;
+    cursor: default;
+}
+
+.menu-item.divider:hover {
+    background: transparent;
+}
+
+/* 二级子菜单 */
+.menu-item.has-submenu {
+    position: relative;
+    padding-left: 28px;
+}
+
+.menu-item.has-submenu::after {
+    content: '◀';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: #999;
+    pointer-events: none;
+}
+
+/* 向右展开时：箭头朝右，padding 切换到右侧 */
+.menu-item.has-submenu.expand-right {
+    padding-left: 16px;
+    padding-right: 28px;
+}
+.menu-item.has-submenu.expand-right::after {
+    content: '▶';
+    left: auto;
+    right: 12px;
+}
+
+.submenu {
+    display: none;
+    position: absolute;
+    top: -6px;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    padding: 6px 0;
+    min-width: 120px;
+}
+
+/* 向左展开（默认） */
+.submenu.expand-left {
+    right: 100%;
+    margin-right: 2px;
+    margin-left: 0;
+    left: auto;
+}
+
+/* 向右展开 */
+.submenu.expand-right {
+    left: 100%;
+    margin-left: 2px;
+    margin-right: 0;
+    right: auto;
+}
+
+.menu-item.has-submenu:hover .submenu {
+    display: block;
+}
+
+/* 方向指示器（调试用） */
+#direction-indicator {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 12px;
+    display: none;
+    z-index: 10002;
+}
+
+/* 付款码弹窗 */
+#pay-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10003;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+
+#pay-dialog.show {
+    display: flex;
+}
+
+.pay-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 220px;
+    text-align: center;
+}
+
+.pay-card .pay-title {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.pay-card .pay-img {
+    width: 190px;
+    height: 190px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: #f5f5f5;
+}
+
+.pay-card .pay-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.pay-card .pay-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.pay-btn.primary {
+    background: #07c160;
+    color: #fff;
+}
+
+.pay-btn.primary:hover {
+    background: #06ad56;
+}
+
+.pay-btn.secondary {
+    background: #ff9500;
+    color: #fff;
+}
+
+.pay-btn.secondary:hover {
+    background: #e68600;
+}
+
+/* 更新提示弹窗 */
+#update-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10004;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+
+#update-dialog.show {
+    display: flex;
+}
+
+.update-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 280px;
+    text-align: center;
+}
+
+.update-card .update-title {
+    font-size: 15px;
+    color: #333;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.update-card .update-version {
+    font-size: 13px;
+    color: #07c160;
+    margin-bottom: 8px;
+}
+
+.update-card .update-notes {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 14px;
+    max-height: 80px;
+    overflow-y: auto;
+    text-align: left;
+    line-height: 1.5;
+}
+
+.update-card .update-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    display: none;
+}
+
+.update-card .update-progress-bar.show {
+    display: block;
+}
+
+.update-card .update-progress-fill {
+    height: 100%;
+    background: #07c160;
+    border-radius: 3px;
+    transition: width 0.3s;
+    width: 0%;
+}
+
+.update-card .update-progress-text {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 12px;
+    display: none;
+}
+
+.update-card .update-progress-text.show {
+    display: block;
+}
+
+.update-card .update-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.update-card .update-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.update-btn.primary {
+    background: #07c160;
+    color: #fff;
+}
+
+.update-btn.primary:hover {
+    background: #06ad56;
+}
+
+.update-btn.secondary {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.update-btn.secondary:hover {
+    background: #e0e0e0;
+}
+</style>
+</head>
+<body>
+
+<div id="pet-container">
+    <div id="bubble"></div>
+    <div id="pet"></div>
+    <div id="poop-pile"></div>
+</div>
+
+<div id="context-menu">
+    <div class="menu-item" id="follow-menu-item" onclick="toggleFollow()">开始跟随</div>
+    <div class="menu-item divider"></div>
+    <div class="menu-item" onclick="adjustSize(0.8)">缩小</div>
+    <div class="menu-item" onclick="adjustSize(1.25)">放大</div>
+    <div class="menu-item" onclick="adjustSize(1)">原始大小</div>
+    <div class="menu-item divider"></div>
+    <div class="menu-item has-submenu">互动
+        <div class="submenu">
+            <div class="menu-item" onclick="playIdleAnimationByName('yawn')">哈欠</div>
+            <div class="menu-item" onclick="playIdleAnimationByName('groom')">舔毛</div>
+            <div class="menu-item" onclick="showPayDialog()">喂食猫条</div>
+            <div class="menu-item" id="scoop-menu-item" onclick="triggerScoop()" style="display:none;">铲屎</div>
+        </div>
+    </div>
+    <div class="menu-item divider"></div>
+    <div class="menu-item" id="toggle-top" onclick="toggleAlwaysOnTop()">取消置顶</div>
+    <div class="menu-item divider"></div>
+    <div class="menu-item" onclick="checkForUpdates()">检查更新</div>
+    <div class="menu-item divider"></div>
+    <div class="menu-item" onclick="exitApp()">退出程序</div>
+</div>
+
+<div id="direction-indicator"></div>
+
+<!-- 付款码弹窗 -->
+<div id="pay-dialog">
+    <div class="pay-card">
+        <div class="pay-title">投喂猫条 ¥1.00</div>
+        <img class="pay-img" src="wechatPayCode.jpg" alt="付款码">
+        <div class="pay-btns">
+            <button class="pay-btn secondary" onclick="confirmPayAndFeed()">拿来吧你</button>
+            <button class="pay-btn primary" onclick="confirmPayAndFeed()">完成支付</button>
+        </div>
+    </div>
+</div>
+
+<!-- 更新提示弹窗 -->
+<div id="update-dialog">
+    <div class="update-card">
+        <div class="update-title" id="update-title">发现新版本</div>
+        <div class="update-version" id="update-version"></div>
+        <div class="update-notes" id="update-notes"></div>
+        <div class="update-progress-bar" id="update-progress-bar">
+            <div class="update-progress-fill" id="update-progress-fill"></div>
+        </div>
+        <div class="update-progress-text" id="update-progress-text"></div>
+        <div class="update-btns" id="update-btns">
+            <button class="update-btn secondary" onclick="closeUpdateDialog()">稍后</button>
+            <button class="update-btn primary" id="update-confirm-btn" onclick="startDownloadUpdate()">立即更新</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== 配置 ==========
+const CONFIG = {
+    frameWidth: 322,
+    frameHeight: 400,
+    totalFrames: 37,
+    spriteCols: 12,
+    spriteRows: 4,
+    // 角度死区：角度变化小于此值不切换帧，减少抖动
+    angleDeadZone: 3,
+    // 中心距离阈值：小于此距离显示正面
+    centerDistance: 50,
+    // 闲置动画配置
+    idleTimeout: 30000,  // 鼠标静止多久后触发动画（30秒）
+    poopIdleTimeout: 300000,  // 多久后切换为带💩的雪碧图（测试：5min），仅铲屎动画可重置此倒计时
+    animFps: 24,         // 动画帧率
+};
+
+// 闲置动画列表
+const IDLE_ANIMATIONS = [
+    {
+        name: 'yawn',
+        sprite: 'yawn_sprite.webp',
+        frames: 97,
+        cols: 12,
+        rows: 9,
+    },
+    {
+        name: 'groom',
+        sprite: 'groom_sprite.webp',
+        frames: 97,
+        cols: 12,
+        rows: 9,
+    },
+];
+
+// 喂食猫条动画（付费动作，不参与随机闲置动画）
+const FEED_ANIMATION = {
+    name: 'feed',
+    sprite: 'feed_sprite.webp',
+    frames: 97,
+    cols: 12,
+    rows: 9,
+};
+
+// 铲屎动画（手动触发，清除💩状态）
+const SCOOP_ANIMATION = {
+    name: 'scoop',
+    sprite: 'scoop_sprite.webp',
+    frames: 121,
+    cols: 12,
+    rows: 11,
+};
+
+// 走路动画（跟随鼠标移动 / 散步）
+const WALK_SCALE = 1.5;  // 走路动画比待机放大 1.5 倍
+const WALK_RIGHT_ANIMATION = {
+    name: 'walk_right',
+    sprite: 'walk_right_sprite.webp',
+    frames: 241,
+    cols: 12,
+    rows: 21,
+};
+const WALK_LEFT_ANIMATION = {
+    name: 'walk_left',
+    sprite: 'walk_left_sprite.webp',
+    frames: 241,
+    cols: 12,
+    rows: 21,
+};
+// 跟随配置
+const FOLLOW_CONFIG = {
+    startDelay: 2000,      // 2秒延迟后开始跟随
+    walkSpeed: 2.5,        // 每走路动画帧移动像素（屏幕像素）
+    touchStopDist: 60,     // 距离鼠标<此像素视为触碰，停止跟随
+    directionAngleDiff: 90,// 方向大于此阈值切换左右走方向
+};
+
+// ANGLEKEYS: 角度 -> 帧号（360度全覆盖）
+// 角度：0度=上，顺时针增加
+// 37 个纯关键帧（无插值），按头部前景质心数据实测校准：
+//   帧0: 上(dx=+9.8, dy=+14.3)
+//   帧18: 最右90°(dx=+30.4, dy=+30.4)
+//   帧24: 最下180°(dx=+15.1, dy=+36.3)
+//   帧31: 最左270°(dx=-11.4, dy=+29.4)
+//   帧36: 回到上方(dx=+3.9, dy=+14.3) ≈ 帧0
+// 270°→315°→0° 帧号连续 (31→33→0) 无跳变，消除了之前硬跳到帧2的生硬过渡
+const ANGLEKEYS = {
+    0: 0,      // 上
+    45: 14,    // 右上
+    90: 18,    // 右（头部质心最右点）
+    135: 22,   // 右下
+    180: 24,   // 下（头部质心最下点）
+    225: 28,   // 左下
+    270: 31,   // 左（头部质心最左点）
+    315: 33,   // 左上（到帧33后经34,35,36自然回正到帧0）
+};
+
+// 对话气泡文本
+const BUBBLE_TEXTS = [
+    "你好呀~",
+    "摸摸头~",
+    "喵呜~",
+    "好无聊啊...",
+    "想吃小鱼干！",
+    "陪我玩吧~",
+    "嘿嘿~",
+    "你在看什么？",
+    "打个哈欠~",
+    "伸个懒腰~",
+    "今天天气真好",
+    "我可爱吗？",
+    "别戳我啦~",
+    "呼呼~",
+    "喵~",
+];
+
+// ========== 状态 ==========
+let currentFrame = -1;  // -1 保证首次 setFrame 一定会应用 backgroundPosition
+let lastFrame = 0;
+let lastAngle = 0;
+let petScale = 1;
+let isDragging = false;
+let dragStartMouse = { x: 0, y: 0 };
+let dragStartWindow = { x: 0, y: 0 };
+let isAlwaysOnTop = true;
+let isAnimating = false;
+let bubbleTimer = null;
+let isElectron = !!window.electronAPI;
+
+// 闲置动画状态
+let isIdleAnimating = false;
+let isManualAnim = false;  // 当前动画是否由右键菜单手动触发（手动触发的动画不被鼠标移动打断）
+let idleAnimFrame = 0;
+let idleAnimTimer = null;
+let idleAnimInterval = null;
+let lastMouseMoveTime = Date.now();
+let lastUserInteractionTime = Date.now();  // 💩倒计时基准时间，仅铲屎动画结束后重置
+let currentIdleAnim = null;
+let idleAnimImages = {};  // 预加载的动画图片
+let isPoopMode = false;  // 是否处于💩模式（5分钟无铲屎后激活）
+
+// 跟随模式状态
+let isFollowing = false;  // 是否正在跟随鼠标
+let followStartTimer = null;  // 跟随开始倒计时
+let walkAnimInterval = null;  // 走路动画播放定时器
+let walkAnimFrame = 0;  // 当前走路帧
+let currentWalkAnim = null;  // 当前走路方向
+let currentGlobalMouse = null;  // 当前全局鼠标位置（来自main进程）
+let lastFollowMoveTime = 0;  // 上次跟随移动时间
+let strollState = null;  // 散步状态（null=未散步）
+
+// 大便堆积
+const POOP_MAX = 5;        // 最多堆积5个
+const POOP_WARN_THRESHOLD = 3;  // 超过3个时提醒
+let poopPileCount = 0;     // 当前堆积数量
+let lastPoopPileTime = 0;  // 上次堆积大便的时间，用于控制继续堆积的间隔
+let poopBubbleInterval = null;  // 常驻气泡切换定时器（超3个时激活）
+const POOP_BUBBLE_PERSIST_TEXTS = ['好臭好臭~', '快铲屎呀!', '堆不下了~', '铲屎官快来!'];
+
+// ========== DOM 元素 ==========
+const petContainer = document.getElementById('pet-container');
+const pet = document.getElementById('pet');
+const bubble = document.getElementById('bubble');
+const contextMenu = document.getElementById('context-menu');
+const directionIndicator = document.getElementById('direction-indicator');
+const payDialog = document.getElementById('pay-dialog');
+
+// ========== 点击穿透 ==========
+// 透明窗口默认点击穿透，仅鼠标悬停在宠物/菜单/弹窗上时才拦截鼠标事件，
+// 这样缩小后透明区域不会挡住屏幕
+function updateClickThrough() {
+    if (!isElectron || !window.electronAPI.setIgnoreMouseEvents) return;
+    const interactive = isMouseOverInteractive || contextMenu.classList.contains('show') || isPayDialogOpen;
+    if (interactive) {
+        window.electronAPI.setIgnoreMouseEvents(false);
+    } else {
+        window.electronAPI.setIgnoreMouseEvents(true, true);
+    }
+}
+let isMouseOverInteractive = false;
+let isPayDialogOpen = false;
+
+// ========== 角度到帧号映射 ==========
+function angleToFrame(angle) {
+    // 规范化角度到 0-360
+    angle = ((angle % 360) + 360) % 360;
+
+    // 找到相邻的两个关键角度
+    const angles = Object.keys(ANGLEKEYS).map(Number).sort((a, b) => a - b);
+
+    let lowerAngle = angles[angles.length - 1];
+    let upperAngle = angles[0];
+
+    for (let i = 0; i < angles.length; i++) {
+        if (angle >= angles[i]) {
+            lowerAngle = angles[i];
+            upperAngle = angles[(i + 1) % angles.length];
+        }
+    }
+
+    let lowerFrame = ANGLEKEYS[lowerAngle];
+    let upperFrame = ANGLEKEYS[upperAngle];
+
+    // 处理角度跨越 0°（如 315° -> 0°）
+    if (upperAngle <= lowerAngle) {
+        upperAngle += 360;
+        if (angle < lowerAngle) angle += 360;
+    }
+
+    // 处理帧号回绕（如 270°帧35 -> 315°帧2，需经 36->0->1->2）
+    if (upperFrame < lowerFrame) {
+        upperFrame += CONFIG.totalFrames;
+    }
+
+    const t = (angle - lowerAngle) / (upperAngle - lowerAngle);
+    const frame = Math.round(lowerFrame + t * (upperFrame - lowerFrame));
+
+    return frame % CONFIG.totalFrames;
+}
+
+// ========== 设置帧 ==========
+function setFrame(frameIndex) {
+    frameIndex = Math.max(0, Math.min(CONFIG.totalFrames - 1, frameIndex));
+    
+    // 只有帧号变化时才更新，减少重绘
+    if (frameIndex === currentFrame) return;
+    currentFrame = frameIndex;
+    
+    const col = frameIndex % CONFIG.spriteCols;
+    const row = Math.floor(frameIndex / CONFIG.spriteCols);
+    
+    // 关键修复：backgroundPosition 也需要乘以缩放比例
+    const x = -col * CONFIG.frameWidth * petScale;
+    const y = -row * CONFIG.frameHeight * petScale;
+    
+    pet.style.backgroundPosition = `${x}px ${y}px`;
+}
+
+// ========== 闲置动画 ==========
+function preloadIdleAnimations() {
+    // 预加载所有动画图片
+    IDLE_ANIMATIONS.forEach(anim => {
+        const img = new Image();
+        img.src = anim.sprite;
+        idleAnimImages[anim.name] = img;
+    });
+    // 预加载喂食动画（付费动作）
+    const feedImg = new Image();
+    feedImg.src = FEED_ANIMATION.sprite;
+    idleAnimImages[FEED_ANIMATION.name] = feedImg;
+    // 预加载铲屎动画
+    const scoopImg = new Image();
+    scoopImg.src = SCOOP_ANIMATION.sprite;
+    idleAnimImages[SCOOP_ANIMATION.name] = scoopImg;
+    // 预加载💩雪碧图
+    const poopImg = new Image();
+    poopImg.src = 'sprite_poop.webp';
+    idleAnimImages['poop'] = poopImg;
+    // 预加载走路动画
+    const walkRightImg = new Image();
+    walkRightImg.src = WALK_RIGHT_ANIMATION.sprite;
+    idleAnimImages[WALK_RIGHT_ANIMATION.name] = walkRightImg;
+    const walkLeftImg = new Image();
+    walkLeftImg.src = WALK_LEFT_ANIMATION.sprite;
+    idleAnimImages[WALK_LEFT_ANIMATION.name] = walkLeftImg;
+}
+
+function setIdleAnimFrame(anim, frameIndex) {
+    // 设置动画帧
+    frameIndex = Math.max(0, Math.min(anim.frames - 1, frameIndex));
+    
+    const col = frameIndex % anim.cols;
+    const row = Math.floor(frameIndex / anim.cols);
+    
+    const x = -col * CONFIG.frameWidth * petScale;
+    const y = -row * CONFIG.frameHeight * petScale;
+    
+    pet.style.backgroundImage = `url('${anim.sprite}')`;
+    pet.style.backgroundSize = `${anim.cols * CONFIG.frameWidth * petScale}px ${anim.rows * CONFIG.frameHeight * petScale}px`;
+    pet.style.backgroundPosition = `${x}px ${y}px`;
+}
+
+function resetIdleTimer() {
+    // 重置闲置计时器（鼠标移动时调用）
+    lastMouseMoveTime = Date.now();
+    // 注意：💩倒计时不受鼠标移动影响，仅铲屎动画结束后重置
+
+    // 如果正在播放闲置动画，打断它（手动触发的动画不被打断）
+    if (isIdleAnimating && !isManualAnim) {
+        stopIdleAnimation();
+    }
+}
+
+function startIdleDetection() {
+    // 启动闲置检测，每秒检查一次
+    setInterval(() => {
+        if (isIdleAnimating || isAnimating || isDragging || followStartTimer) return;
+
+        // 💩模式下不播放随机闲置动画，等铲屎完成后恢复
+        if (!isPoopMode) {
+            const idleTime = Date.now() - lastMouseMoveTime;
+            if (idleTime >= CONFIG.idleTimeout) {
+                playRandomIdleAnimation();
+            }
+        }
+
+        // 💩模式检测：用户无交互超过 poopIdleTimeout，切换为带💩的雪碧图
+        const poopIdleTime = Date.now() - lastUserInteractionTime;
+        if (!isPoopMode && poopIdleTime >= CONFIG.poopIdleTimeout) {
+            switchToPoopSprite();
+        }
+
+        // 💩模式下：每隔 poopIdleTimeout 继续堆积一个，直到达到 POOP_MAX 上限
+        if (isPoopMode && poopPileCount < POOP_MAX) {
+            const sinceLastPile = Date.now() - lastPoopPileTime;
+            if (sinceLastPile >= CONFIG.poopIdleTimeout) {
+                addPoopToPile();
+                lastPoopPileTime = Date.now();
+            }
+        }
+    }, 1000);
+}
+
+function playIdleAnimation(anim, manual = false) {
+    if (isIdleAnimating || isAnimating) return;
+
+    // 正在走路/跟随/散步：先停止（避免动画互相覆盖、窗口移动冲突）
+    if (isFollowing || walkAnimInterval) {
+        stopFollow();
+    }
+    if (strollState) {
+        stopStrollAnimation();
+    }
+
+    currentIdleAnim = anim;
+    isIdleAnimating = true;
+    isManualAnim = manual;
+    idleAnimFrame = 0;
+    
+    // 开始播放动画
+    const frameInterval = 1000 / CONFIG.animFps;
+    idleAnimInterval = setInterval(() => {
+        idleAnimFrame++;
+        
+        if (idleAnimFrame >= anim.frames) {
+            // 动画播放结束，立即恢复转头 sprite
+            clearInterval(idleAnimInterval);
+            idleAnimInterval = null;
+
+            // 恢复转头 sprite（💩模式下恢复为💩雪碧图）
+            const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+            pet.style.backgroundImage = `url('${restoreSprite}')`;
+            pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+            currentFrame = -1;  // 强制刷新
+            setFrame(ANGLEKEYS[0]);  // 恢复正面
+
+            // 铲屎动画结束后：恢复正常雪碧图 + 重新1分钟定时
+            if (anim.name === 'scoop') {
+                isPoopMode = false;
+                document.getElementById('scoop-menu-item').style.display = 'none';
+                pet.style.backgroundImage = "url('sprite.webp')";
+                pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+                currentFrame = -1;
+                setFrame(ANGLEKEYS[0]);
+                lastUserInteractionTime = Date.now();  // 铲屎后重新开始5分钟倒计时
+                clearPoopPile();  // 清除所有堆积大便
+            }
+
+            // 等待一段时间后继续检测
+            isIdleAnimating = false;
+            isManualAnim = false;
+            currentIdleAnim = null;
+            lastMouseMoveTime = Date.now();  // 重置闲置时间
+            return;
+        }
+        
+        setIdleAnimFrame(anim, idleAnimFrame);
+    }, frameInterval);
+}
+
+function playRandomIdleAnimation() {
+    // 30% 概率散步（需要 Electron 环境和鼠标位置数据）
+    if (Math.random() < 0.3 && isElectron && currentGlobalMouse) {
+        playStrollAnimation();
+    } else {
+        const anim = IDLE_ANIMATIONS[Math.floor(Math.random() * IDLE_ANIMATIONS.length)];
+        playIdleAnimation(anim);
+    }
+}
+
+// ========== 散步动画 ==========
+function playStrollAnimation() {
+    if (isIdleAnimating || isAnimating || isFollowing || strollState) return;
+
+    isIdleAnimating = true;
+    isManualAnim = true;  // 散步不被鼠标移动打断
+
+    // 随机方向
+    const direction = Math.random() < 0.5 ? 'left' : 'right';
+    const oppositeDir = direction === 'left' ? 'right' : 'left';
+
+    // 起始窗口位置
+    const startX = currentGlobalMouse ? Math.round(currentGlobalMouse.winX ?? 0) : 0;
+    const startY = currentGlobalMouse ? Math.round(currentGlobalMouse.winY ?? 0) : 0;
+
+    strollState = {
+        direction: direction,
+        oppositeDir: oppositeDir,
+        anim: direction === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION,
+        phase: 'out',          // 'out'=走出去, 'back'=原路返回
+        startTime: Date.now(),
+        duration: 3000,        // 每段 3 秒
+        startX: startX,
+        startY: startY,
+        frame: 0,
+        interval: null,
+    };
+
+    // 走路放大尺寸
+    const sw = petScale * WALK_SCALE;
+    pet.style.width = `${CONFIG.frameWidth * sw}px`;
+    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+
+    showBubble(['去散步~', '走走走走~', '溜达溜达~']);
+    setWalkAnimFrame(strollState.anim, 0);
+
+    const frameInterval = 1000 / CONFIG.animFps;
+    strollState.interval = setInterval(() => {
+        strollState.frame = (strollState.frame + 1) % strollState.anim.frames;
+        setWalkAnimFrame(strollState.anim, strollState.frame);
+
+        const elapsed = Date.now() - strollState.startTime;
+
+        // 阶段切换
+        if (strollState.phase === 'out' && elapsed >= strollState.duration) {
+            strollState.phase = 'back';
+            strollState.startTime = Date.now();
+            strollState.anim = strollState.oppositeDir === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION;
+            showBubble(['回家咯~']);
+            return;
+        }
+        if (strollState.phase === 'back' && elapsed >= strollState.duration) {
+            stopStrollAnimation();
+            return;
+        }
+
+        strollMove();
+    }, frameInterval);
+}
+
+function strollMove() {
+    if (!strollState || !currentGlobalMouse) return;
+
+    const m = currentGlobalMouse;
+    const screenW = m.screenWidth || window.screen.width || 1920;
+    const winW = m.winWidth || 360;
+    const speed = FOLLOW_CONFIG.walkSpeed;
+    const dir = strollState.phase === 'out' ? strollState.direction : strollState.oppositeDir;
+    const moveX = dir === 'left' ? -speed : speed;
+
+    const curX = Math.round(m.winX ?? strollState.startX);
+    const curY = Math.round(m.winY ?? strollState.startY);
+    let newX = curX + moveX;
+
+    // 边界限制：不走出屏幕
+    const minX = 0;
+    const maxX = Math.max(0, screenW - winW);
+    newX = Math.max(minX, Math.min(maxX, newX));
+
+    // 到达边界：提前切换返回
+    if ((newX === minX || newX === maxX) && strollState.phase === 'out') {
+        strollState.phase = 'back';
+        strollState.startTime = Date.now();
+        strollState.anim = strollState.oppositeDir === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION;
+        showBubble(['到头了，回家~']);
+    }
+
+    if (isElectron && window.electronAPI.dragWindow) {
+        window.electronAPI.dragWindow(newX, curY);
+        currentGlobalMouse.winX = newX;
+        currentGlobalMouse.winY = curY;
+    }
+
+    // 返回阶段：回到起点附近即结束
+    if (strollState.phase === 'back') {
+        if (Math.abs(newX - strollState.startX) < speed) {
+            stopStrollAnimation();
+        }
+    }
+}
+
+function stopStrollAnimation() {
+    if (!strollState) return;
+    if (strollState.interval) {
+        clearInterval(strollState.interval);
+        strollState.interval = null;
+    }
+    strollState = null;
+
+    isIdleAnimating = false;
+    isManualAnim = false;
+
+    // 恢复 pet 尺寸和待机 sprite
+    pet.style.width = `${CONFIG.frameWidth * petScale}px`;
+    pet.style.height = `${CONFIG.frameHeight * petScale}px`;
+    const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+    pet.style.backgroundImage = `url('${restoreSprite}')`;
+    pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+    currentFrame = -1;
+    setFrame(lastFrame);
+    lastMouseMoveTime = Date.now();
+}
+
+function playIdleAnimationByName(name) {
+    // 关闭右键菜单
+    contextMenu.classList.remove('show');
+
+    // 如果正在播放闲置动画，先停止
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+
+    const anim = IDLE_ANIMATIONS.find(a => a.name === name);
+    if (anim) {
+        playIdleAnimation(anim, true);  // manual=true，鼠标移动不打断
+    }
+}
+
+// ========== 💩模式 ==========
+function switchToPoopSprite() {
+    // 待机超过5分钟，切换为带💩的雪碧图
+    isPoopMode = true;
+    document.getElementById('scoop-menu-item').style.display = '';
+    pet.style.backgroundImage = "url('sprite_poop.webp')";
+    pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+    currentFrame = -1;  // 强制刷新
+    setFrame(lastFrame);
+
+    // 仅记录开始堆积的基准时间，首次拉屎延后到下一个 poopIdleTimeout
+    lastPoopPileTime = Date.now();
+}
+
+// ========== 大便堆积 ==========
+// 容器 240x200，item 80x80。按 bottom（距容器底部像素）分成三层：底层先占，再中层，再顶层
+// bottom=0 表示贴紧容器底部，值越大越往上
+const POOP_LAYOUT = {
+    ITEM_W: 80,
+    ITEM_H: 80,
+    CONT_W: 240,
+    CONT_H: 200,
+    // 三层：bottom 取值范围（自底向上）
+    TIERS: [
+        { bottomMin: 0,  bottomMax: 20, z: 1 },   // 底层（先占）
+        { bottomMin: 35, bottomMax: 70, z: 2 },   // 中层
+        { bottomMin: 75, bottomMax: 115, z: 3 },  // 顶层
+    ],
+    RIGHT_MAX: 240 - 80,   // right 上限（item 右边不超出容器左侧）
+    // overlap 判定：两矩形相交面积 / item面积。超过此值认为重叠不可接受
+    MAX_OVERLAP_RATIO: 0.22,
+    SAMPLES_PER_TIER: 40,  // 每层采样次数
+    ANGLE_MIN: -100,
+    ANGLE_MAX: 100,
+};
+
+function addPoopToPile() {
+    if (poopPileCount >= POOP_MAX) return false;
+    const pile = document.getElementById('poop-pile');
+
+    // 收集已有大便的矩形（相对容器：x 表示 left 值，y 表示 top 值）
+    const existing = [];
+    const items = pile.getElementsByClassName('poop-item');
+    for (let i = 0; i < items.length; i++) {
+        const el = items[i];
+        const r = parseFloat(el.style.right);
+        const b = parseFloat(el.style.bottom);
+        // right + width = right edge; containerWidth - right = left pixel
+        const x = POOP_LAYOUT.CONT_W - r - POOP_LAYOUT.ITEM_W;  // left
+        const y = POOP_LAYOUT.CONT_H - b - POOP_LAYOUT.ITEM_H;  // top
+        existing.push({ x, y, w: POOP_LAYOUT.ITEM_W, h: POOP_LAYOUT.ITEM_H });
+    }
+
+    // 重叠率计算：axis-aligned 相交面积 / (ITEM_W * ITEM_H)
+    const ITEM_AREA = POOP_LAYOUT.ITEM_W * POOP_LAYOUT.ITEM_H;
+    function overlapRatio(x, y) {
+        let maxRat = 0;
+        for (let i = 0; i < existing.length; i++) {
+            const r = existing[i];
+            const ix = Math.max(x, r.x);
+            const iy = Math.max(y, r.y);
+            const ox = Math.min(x + POOP_LAYOUT.ITEM_W, r.x + r.w);
+            const oy = Math.min(y + POOP_LAYOUT.ITEM_H, r.y + r.h);
+            if (ox <= ix || oy <= iy) continue;
+            const rat = (ox - ix) * (oy - iy) / ITEM_AREA;
+            if (rat > maxRat) maxRat = rat;
+        }
+        return maxRat;
+    }
+
+    // 自底向上遍历层，在每层采样 N 个候选，选第一个重叠率低于阈值的
+    let chosen = null;
+    let chosenTierIdx = 0;
+    let chosenOverlap = 1.0;
+
+    for (let ti = 0; ti < POOP_LAYOUT.TIERS.length; ti++) {
+        const tier = POOP_LAYOUT.TIERS[ti];
+        let tierBest = null;
+        let tierBestOverlap = 1.0;
+        for (let s = 0; s < POOP_LAYOUT.SAMPLES_PER_TIER; s++) {
+            const right = Math.random() * POOP_LAYOUT.RIGHT_MAX;
+            const bottom = tier.bottomMin + Math.random() * (tier.bottomMax - tier.bottomMin);
+            const x = POOP_LAYOUT.CONT_W - right - POOP_LAYOUT.ITEM_W;
+            const y = POOP_LAYOUT.CONT_H - bottom - POOP_LAYOUT.ITEM_H;
+            const rat = overlapRatio(x, y);
+            if (rat < tierBestOverlap) {
+                tierBestOverlap = rat;
+                tierBest = { right, bottom };
+            }
+            if (rat <= POOP_LAYOUT.MAX_OVERLAP_RATIO) break; // 找到好的，立刻停止采样
+        }
+        if (tierBest && tierBestOverlap <= POOP_LAYOUT.MAX_OVERLAP_RATIO) {
+            chosen = tierBest;
+            chosenTierIdx = ti;
+            chosenOverlap = tierBestOverlap;
+            break; // 底层有可接受解，不再向上层寻找
+        }
+        if (tierBest && tierBestOverlap < chosenOverlap) {
+            chosenOverlap = tierBestOverlap;
+            chosen = tierBest;
+            chosenTierIdx = ti;
+        }
+    }
+
+    if (!chosen) {
+        // 极端兜底（应该不会发生）：放中间底层
+        chosen = { right: 60, bottom: 5 };
+        chosenTierIdx = 0;
+    }
+
+    const poop = document.createElement('div');
+    poop.className = 'poop-item';
+
+    // 旋转角度 -100°~100°
+    const angle = POOP_LAYOUT.ANGLE_MIN + Math.random() * (POOP_LAYOUT.ANGLE_MAX - POOP_LAYOUT.ANGLE_MIN);
+
+    poop.style.right = `${chosen.right}px`;
+    poop.style.bottom = `${chosen.bottom}px`;
+    poop.style.transform = `rotate(${angle}deg)`;
+    poop.style.zIndex = String(POOP_LAYOUT.TIERS[chosenTierIdx].z);
+
+    pile.appendChild(poop);
+    poopPileCount++;
+
+    // 超过阈值时启动常驻气泡（每10秒切换内容），铲屎后由 clearPoopPile 清除
+    if (poopPileCount > POOP_WARN_THRESHOLD && !poopBubbleInterval) {
+        showBubble(POOP_BUBBLE_PERSIST_TEXTS);
+        // 清掉 showBubble 设置的 2 秒自动隐藏，让气泡常驻
+        if (bubbleTimer) { clearTimeout(bubbleTimer); bubbleTimer = null; }
+        let lastIdx = -1;
+        poopBubbleInterval = setInterval(() => {
+            let idx;
+            do { idx = Math.floor(Math.random() * POOP_BUBBLE_PERSIST_TEXTS.length); }
+            while (idx === lastIdx && POOP_BUBBLE_PERSIST_TEXTS.length > 1);
+            lastIdx = idx;
+            bubble.textContent = POOP_BUBBLE_PERSIST_TEXTS[idx];
+            bubble.classList.add('show');
+        }, 10000);
+    }
+    return true;
+}
+
+function clearPoopPile() {
+    const pile = document.getElementById('poop-pile');
+    while (pile.firstChild) {
+        pile.removeChild(pile.firstChild);
+    }
+    poopPileCount = 0;
+    // 清除常驻气泡
+    if (poopBubbleInterval) {
+        clearInterval(poopBubbleInterval);
+        poopBubbleInterval = null;
+    }
+    hideBubble();
+}
+
+function triggerScoop() {
+    // 关闭右键菜单
+    contextMenu.classList.remove('show');
+
+    // 如果正在播放闲置动画，先停止
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+    if (isAnimating) return;
+
+    // 播放铲屎动画（手动触发，鼠标移动不打断）
+    playIdleAnimation(SCOOP_ANIMATION, true);
+}
+
+// ========== 走路动画播放 ==========
+function setWalkAnimFrame(anim, frameIndex) {
+    frameIndex = Math.max(0, Math.min(anim.frames - 1, frameIndex));
+    const col = frameIndex % anim.cols;
+    const row = Math.floor(frameIndex / anim.cols);
+    const sw = petScale * WALK_SCALE;
+    const x = -col * CONFIG.frameWidth * sw;
+    const y = -row * CONFIG.frameHeight * sw;
+    pet.style.backgroundImage = `url('${anim.sprite}')`;
+    pet.style.backgroundSize = `${anim.cols * CONFIG.frameWidth * sw}px ${anim.rows * CONFIG.frameHeight * sw}px`;
+    pet.style.backgroundPosition = `${x}px ${y}px`;
+}
+
+function playWalkAnimation(direction) {
+    const anim = direction === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION;
+    // 如果已经在播放同方向走路，无需重启
+    if (walkAnimInterval && currentWalkAnim && currentWalkAnim.name === anim.name) {
+        return;
+    }
+    // 如果正在播放闲置动画，先停止
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+    currentWalkAnim = anim;
+    // 走路时放大 pet 尺寸
+    const sw = petScale * WALK_SCALE;
+    pet.style.width = `${CONFIG.frameWidth * sw}px`;
+    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+    // 如果已经有 interval，只换帧继续（不重置 walkAnimFrame 以保持流畅）
+    if (walkAnimInterval) {
+        // 切换方向后，确保下一帧立即按新 sprite 渲染
+        setWalkAnimFrame(currentWalkAnim, walkAnimFrame % currentWalkAnim.frames);
+        return;
+    }
+    // 立即渲染第一帧
+    setWalkAnimFrame(currentWalkAnim, walkAnimFrame);
+    // 先创建 interval，确保 walkAnimInterval 已赋值，再调用 followStep
+    // （followStep 可能触发 playWalkAnimation 切换方向，此时 walkAnimInterval 已存在，不会重复创建 interval）
+    const frameInterval = 1000 / CONFIG.animFps;  // 与闲置动画帧率一致（24fps）
+    walkAnimInterval = setInterval(() => {
+        walkAnimFrame = (walkAnimFrame + 1) % currentWalkAnim.frames;
+        setWalkAnimFrame(currentWalkAnim, walkAnimFrame);
+        // 每帧同步执行：跟随移动 + 触碰检测
+        if (isFollowing) {
+            followStep();
+        }
+    }, frameInterval);
+    // interval 创建后立即执行一次跟随移动，与尺寸变化同步
+    if (isFollowing) {
+        followStep();
+    }
+}
+
+function stopWalkAnimation() {
+    if (walkAnimInterval) {
+        clearInterval(walkAnimInterval);
+        walkAnimInterval = null;
+    }
+    walkAnimFrame = 0;
+    currentWalkAnim = null;
+    // 恢复 pet 尺寸为待机大小
+    pet.style.width = `${CONFIG.frameWidth * petScale}px`;
+    pet.style.height = `${CONFIG.frameHeight * petScale}px`;
+    // 恢复转头 sprite
+    const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+    pet.style.backgroundImage = `url('${restoreSprite}')`;
+    pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+    currentFrame = -1;
+    setFrame(lastFrame);
+}
+
+// ========== 跟随鼠标功能 ==========
+function toggleFollow() {
+    contextMenu.classList.remove('show');
+    if (isFollowing) {
+        stopFollow();
+    } else {
+        startFollow();
+    }
+}
+
+function startFollow() {
+    // 切换菜单文字
+    const mi = document.getElementById('follow-menu-item');
+    if (mi) mi.textContent = '停止跟随';
+
+    // 清理可能已存在的倒计时
+    if (followStartTimer) {
+        clearTimeout(followStartTimer);
+        followStartTimer = null;
+    }
+
+    // 如果正在跟随，忽略
+    if (isFollowing) return;
+
+    // 关闭正在播放的闲置动画（铲屎/喂食/拉伸等），避免状态冲突
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+
+    // 提示气泡：2 秒后开始
+    showBubble(['喵~ 2秒后出发!', '准备跟随~']);
+
+    // 2 秒延迟后启动走路跟随
+    followStartTimer = setTimeout(() => {
+        followStartTimer = null;
+        isFollowing = true;
+        hideBubble();
+        // 默认先向右走，followStep 会根据鼠标方向动态切换
+        playWalkAnimation('right');
+    }, FOLLOW_CONFIG.startDelay);
+}
+
+function stopFollow() {
+    const mi = document.getElementById('follow-menu-item');
+    if (mi) mi.textContent = '开始跟随';
+
+    if (followStartTimer) {
+        clearTimeout(followStartTimer);
+        followStartTimer = null;
+    }
+
+    isFollowing = false;
+    stopWalkAnimation();
+}
+
+function followStep() {
+    if (!isFollowing || !currentGlobalMouse) return;
+
+    const m = currentGlobalMouse;
+    const winW = m.winWidth || window.outerWidth || 360;
+    const winH = m.winHeight || window.outerHeight || 460;
+
+    // 猫身体在屏幕上的矩形（pet-container 居中于窗口，走路时放大 WALK_SCALE 倍）
+    const sw = petScale * WALK_SCALE;
+    const catW = CONFIG.frameWidth * sw;
+    const catH = CONFIG.frameHeight * sw;
+    const catCenterX = (m.winX ?? 0) + winW / 2;
+    const catCenterY = (m.winY ?? 0) + winH / 2;
+    const catLeft = catCenterX - catW / 2;
+    const catRight = catCenterX + catW / 2;
+    const catTop = catCenterY - catH / 2;
+    const catBottom = catCenterY + catH / 2;
+
+    // 身体触碰检测：鼠标进入猫身体矩形才算触碰
+    if (m.x >= catLeft && m.x <= catRight && m.y >= catTop && m.y <= catBottom) {
+        showBubble(['抓到你了~', '喵!', '停下休息~']);
+        stopFollow();
+        lastMouseMoveTime = Date.now();
+        return;
+    }
+
+    const dx = m.x - catCenterX;
+    const dy = m.y - catCenterY;
+    const dist = Math.hypot(dx, dy);
+
+    // 切换走路方向（根据水平位移方向决定）
+    const needDir = dx >= 0 ? 'right' : 'left';
+    if (!currentWalkAnim || (needDir === 'left' && currentWalkAnim.name !== WALK_LEFT_ANIMATION.name) ||
+        (needDir === 'right' && currentWalkAnim.name !== WALK_RIGHT_ANIMATION.name)) {
+        playWalkAnimation(needDir);
+    }
+
+    // 每动画帧移动 walkSpeed 像素（朝鼠标方向）
+    const speed = FOLLOW_CONFIG.walkSpeed;
+    let moveX = (dx / dist) * speed;
+    let moveY = (dy / dist) * speed;
+    // 整数移动
+    moveX = Math.round(moveX);
+    moveY = Math.round(moveY);
+
+    if ((moveX !== 0 || moveY !== 0) && isElectron && window.electronAPI.getWindowPosition && window.electronAPI.dragWindow) {
+        // 用已缓存 winX/winY 作为基准计算新位置
+        const curX = Math.round(m.winX ?? 0);
+        const curY = Math.round(m.winY ?? 0);
+        const newX = curX + moveX;
+        const newY = curY + moveY;
+        // 边界限制：不要移出屏幕太远
+        try {
+            window.electronAPI.dragWindow(newX, newY);
+            // 同步更新内存中的 winX/winY（让下一帧用最新位置计算方向与距离）
+            currentGlobalMouse.winX = newX;
+            currentGlobalMouse.winY = newY;
+        } catch (e) {
+            /* ignore */
+        }
+    }
+}
+
+function stopIdleAnimation() {
+    // 停止闲置动画，恢复转头跟踪
+    if (idleAnimInterval) {
+        clearInterval(idleAnimInterval);
+        idleAnimInterval = null;
+    }
+    if (idleAnimTimer) {
+        clearTimeout(idleAnimTimer);
+        idleAnimTimer = null;
+    }
+    // 散步也属于闲置动画，一并停止
+    if (strollState) {
+        stopStrollAnimation();
+    }
+
+    isIdleAnimating = false;
+    isManualAnim = false;
+    currentIdleAnim = null;
+
+    // 恢复转头 sprite（💩模式下恢复为💩雪碧图）
+    const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+    pet.style.backgroundImage = `url('${restoreSprite}')`;
+    pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+    currentFrame = -1;  // 强制刷新
+    setFrame(lastFrame);
+}
+
+// ========== 鼠标方向跟踪 ==========
+function updateDirection(mouseX, mouseY) {
+    if (isAnimating || isIdleAnimating) return;
+    
+    // 宠物中心在窗口中心
+    const petCenterX = window.innerWidth / 2;
+    const petCenterY = window.innerHeight / 2;
+    
+    const dx = mouseX - petCenterX;
+    const dy = mouseY - petCenterY;
+    
+    // 计算角度：0度=上，顺时针
+    let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    angle = angle + 90;
+    if (angle < 0) angle += 360;
+    
+    // 计算距离
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 如果鼠标很近，显示正面
+    if (distance < CONFIG.centerDistance) {
+        setFrame(ANGLEKEYS[0]);
+        lastAngle = 0;
+        if (directionIndicator.style.display === 'block') {
+            directionIndicator.textContent = `中心\n帧: ${ANGLEKEYS[0]}`;
+        }
+        return;
+    }
+    
+    // 角度死区：角度变化太小不切换帧，减少抖动
+    let angleDiff = Math.abs(angle - lastAngle);
+    if (angleDiff > 180) angleDiff = 360 - angleDiff;
+    
+    if (angleDiff < CONFIG.angleDeadZone && lastFrame === currentFrame) {
+        return;
+    }
+    
+    lastAngle = angle;
+    const frame = angleToFrame(angle);
+    lastFrame = frame;
+    setFrame(frame);
+    
+    if (directionIndicator.style.display === 'block') {
+        directionIndicator.textContent = `角度: ${angle.toFixed(1)}°\n帧: ${frame}\n缩放: ${petScale.toFixed(2)}x`;
+    }
+}
+
+// ========== 鼠标事件 ==========
+document.addEventListener('mousemove', (e) => {
+    // 重置闲置计时器
+    resetIdleTimer();
+    
+    // 浏览器模式或鼠标在窗口内时，用窗口内坐标
+    if (!isElectron) {
+        updateDirection(e.clientX, e.clientY);
+    }
+});
+
+// ========== 全屏鼠标跟踪（Electron） ==========
+function updateDirectionFromGlobal(dx, dy) {
+    // dx, dy 是鼠标相对于宠物中心的偏移量（屏幕坐标）
+    // 跟随模式/走路动画进行中：不做转头跟踪（走路使用专用方向切换逻辑）
+    if (isAnimating || isIdleAnimating || isFollowing || walkAnimInterval || strollState) return;
+    
+    // 重置闲置计时器
+    resetIdleTimer();
+    
+    // 计算角度：0度=上，顺时针
+    let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    angle = angle + 90;
+    if (angle < 0) angle += 360;
+    
+    // 计算距离
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 如果鼠标很近（在宠物中心附近），显示正面
+    // 全屏模式下，中心距离阈值可以大一点
+    const centerThreshold = CONFIG.centerDistance * petScale * 2;
+    if (distance < centerThreshold) {
+        setFrame(ANGLEKEYS[0]);
+        lastAngle = 0;
+        if (directionIndicator.style.display === 'block') {
+            directionIndicator.textContent = `中心（全屏）\n帧: ${ANGLEKEYS[0]}\n距离: ${distance.toFixed(0)}px`;
+        }
+        return;
+    }
+    
+    // 角度死区：角度变化太小不切换帧，减少抖动
+    let angleDiff = Math.abs(angle - lastAngle);
+    if (angleDiff > 180) angleDiff = 360 - angleDiff;
+    
+    if (angleDiff < CONFIG.angleDeadZone && lastFrame === currentFrame) {
+        return;
+    }
+    
+    lastAngle = angle;
+    const frame = angleToFrame(angle);
+    lastFrame = frame;
+    setFrame(frame);
+    
+    if (directionIndicator.style.display === 'block') {
+        directionIndicator.textContent = `角度: ${angle.toFixed(1)}°\n帧: ${frame}\n缩放: ${petScale.toFixed(2)}x\n距离: ${distance.toFixed(0)}px`;
+    }
+}
+
+// ========== 拖动窗口 ==========
+petContainer.addEventListener('mousedown', async (e) => {
+    if (e.button !== 0) return; // 只处理左键
+    e.preventDefault();
+
+    // 用户主动拖动窗口：如果跟随/散步中，先停止（避免与移动冲突）
+    if (isFollowing || walkAnimInterval) {
+        stopFollow();
+    }
+    if (strollState) {
+        stopStrollAnimation();
+    }
+
+    if (isElectron) {
+        // Electron环境：拖动整个窗口
+        isDragging = true;
+        dragStartMouse.x = e.screenX;
+        dragStartMouse.y = e.screenY;
+
+        try {
+            const pos = await window.electronAPI.getWindowPosition();
+            dragStartWindow.x = pos.x;
+            dragStartWindow.y = pos.y;
+        } catch (err) {
+            console.error('Failed to get window position:', err);
+        }
+    } else {
+        // 浏览器环境：在页面内拖动（仅调试用）
+        isDragging = true;
+        const rect = petContainer.getBoundingClientRect();
+        dragStartMouse.x = e.clientX;
+        dragStartMouse.y = e.clientY;
+        dragStartWindow.x = rect.left;
+        dragStartWindow.y = rect.top;
+    }
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    
+    const dx = e.screenX - dragStartMouse.x;
+    const dy = e.screenY - dragStartMouse.y;
+    
+    if (isElectron) {
+        const newX = dragStartWindow.x + dx;
+        const newY = dragStartWindow.y + dy;
+        window.electronAPI.dragWindow(newX, newY);
+    } else {
+        // 浏览器调试模式
+        const newX = dragStartWindow.x + (e.clientX - dragStartMouse.x);
+        const newY = dragStartWindow.y + (e.clientY - dragStartMouse.y);
+        petContainer.style.left = `${newX}px`;
+        petContainer.style.top = `${newY}px`;
+        petContainer.style.transform = 'none';
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    isDragging = false;
+});
+
+// 点击互动
+petContainer.addEventListener('click', (e) => {
+    if (isDragging) return;
+    triggerInteraction();
+});
+
+// 鼠标进入宠物区域时关闭点击穿透，离开时恢复（让透明区域可点穿）
+petContainer.addEventListener('mouseenter', () => {
+    isMouseOverInteractive = true;
+    updateClickThrough();
+});
+petContainer.addEventListener('mouseleave', () => {
+    isMouseOverInteractive = false;
+    updateClickThrough();
+});
+
+// 右键菜单定位：自适应屏幕边缘，超出时自动切换展开方向
+function positionContextMenu(clientX, clientY) {
+    const MARGIN = 4;
+    const SUB_MARGIN = 2;
+
+    // 先临时放在 0,0 显示以获取实际尺寸
+    contextMenu.style.left = '0px';
+    contextMenu.style.top = '0px';
+    contextMenu.classList.add('show');
+
+    const menuRect = contextMenu.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    // ===== 主菜单水平定位：右侧空间不足时向左展开 =====
+    const spaceRight = winW - clientX - MARGIN;
+    const spaceLeft = clientX - MARGIN;
+    let x;
+    if (spaceRight >= menuRect.width) {
+        x = clientX;                         // 右侧放得下
+    } else if (spaceLeft >= menuRect.width) {
+        x = clientX - menuRect.width;        // 左侧放得下
+    } else if (spaceRight >= spaceLeft) {
+        x = winW - menuRect.width - MARGIN;  // 两边都不够，贴右边
+    } else {
+        x = MARGIN;                          // 贴左边
+    }
+
+    // ===== 主菜单垂直定位：下方空间不足时向上展开 =====
+    const spaceBelow = winH - clientY - MARGIN;
+    const spaceAbove = clientY - MARGIN;
+    let y;
+    if (spaceBelow >= menuRect.height) {
+        y = clientY;                         // 下方放得下
+    } else if (spaceAbove >= menuRect.height) {
+        y = clientY - menuRect.height;       // 上方放得下
+    } else if (spaceBelow >= spaceAbove) {
+        y = winH - menuRect.height - MARGIN; // 贴底部
+    } else {
+        y = MARGIN;                          // 贴顶部
+    }
+
+    contextMenu.style.left = `${x}px`;
+    contextMenu.style.top = `${y}px`;
+
+    // ===== 子菜单方向自适应 =====
+    const submenu = contextMenu.querySelector('.submenu');
+    const hasSubmenuItem = contextMenu.querySelector('.has-submenu');
+    if (submenu && hasSubmenuItem) {
+        // 先清除旧方向 class，测量子菜单尺寸
+        submenu.classList.remove('expand-left', 'expand-right');
+        hasSubmenuItem.classList.remove('expand-right');
+        submenu.style.visibility = 'hidden';
+        submenu.style.display = 'block';
+        submenu.classList.add('expand-left'); // 临时用任意方向获取尺寸
+        const subRect = submenu.getBoundingClientRect();
+        submenu.style.display = '';
+        submenu.style.visibility = '';
+
+        const menuLeft = x;
+        const menuRight = x + menuRect.width;
+        const subW = subRect.width;
+
+        // 判断子菜单水平展开方向
+        const canExpandLeft = menuLeft >= subW + SUB_MARGIN;
+        const canExpandRight = winW - menuRight >= subW + SUB_MARGIN;
+        let expandLeft;
+        if (canExpandLeft) {
+            expandLeft = true;               // 默认向左
+        } else if (canExpandRight) {
+            expandLeft = false;              // 左边不够，向右
+        } else {
+            // 两边都不够，选空间大的一侧
+            expandLeft = menuLeft >= (winW - menuRight);
+        }
+
+        submenu.classList.remove('expand-left', 'expand-right');
+        hasSubmenuItem.classList.remove('expand-right');
+        if (expandLeft) {
+            submenu.classList.add('expand-left');
+        } else {
+            submenu.classList.add('expand-right');
+            hasSubmenuItem.classList.add('expand-right');
+        }
+
+        // 子菜单垂直自适应：底部超出时上移，顶部超出时下移
+        const itemRect = hasSubmenuItem.getBoundingClientRect();
+        const subH = subRect.height;
+        let topOffset = -6;
+        const subBottom = itemRect.top + topOffset + subH;
+        if (subBottom > winH - MARGIN) {
+            topOffset = (winH - MARGIN - itemRect.top) - subH;
+        }
+        const subTop = itemRect.top + topOffset;
+        if (subTop < MARGIN) {
+            topOffset = MARGIN - itemRect.top;
+        }
+        submenu.style.top = `${topOffset}px`;
+    }
+}
+
+// 右键菜单触发
+petContainer.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    positionContextMenu(e.clientX, e.clientY);
+    updateClickThrough();
+});
+
+// 窗口尺寸变化时：如果菜单正显示，自动重新调整位置防止超出边缘
+window.addEventListener('resize', () => {
+    if (contextMenu.classList.contains('show')) {
+        const left = parseFloat(contextMenu.style.left) || 0;
+        const top = parseFloat(contextMenu.style.top) || 0;
+        positionContextMenu(left, top);
+    }
+});
+
+document.addEventListener('click', () => {
+    contextMenu.classList.remove('show');
+    updateClickThrough();
+});
+
+// 滚轮缩放
+petContainer.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    adjustSize(delta, true);
+});
+
+// ========== 互动功能 ==========
+const POOP_BUBBLE_TEXTS = ['快点帮我铲屎吧', '还不铲走留着过年吗', '好臭啊'];
+
+function triggerInteraction() {
+    if (isAnimating) return;
+
+    // 如果正在播放闲置动画，先停止它
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+
+    if (isPoopMode) {
+        // 💩模式下：只触发压缩形变 + 特殊气泡
+        isAnimating = true;
+        pet.classList.remove('squish');
+        void pet.offsetWidth;  // 强制重绘
+        pet.classList.add('squish');
+        showBubble(POOP_BUBBLE_TEXTS);
+        setTimeout(() => {
+            pet.classList.remove('squish');
+            isAnimating = false;
+        }, 500);
+    } else {
+        // 正常模式：随机选择 形变压缩 或 随机闲置动画（哈欠/舔毛）
+        if (Math.random() < 0.5) {
+            isAnimating = true;
+            pet.classList.remove('squish');
+            void pet.offsetWidth;
+            pet.classList.add('squish');
+            showBubble();
+            setTimeout(() => {
+                pet.classList.remove('squish');
+                isAnimating = false;
+            }, 500);
+        } else {
+            const anim = IDLE_ANIMATIONS[Math.floor(Math.random() * IDLE_ANIMATIONS.length)];
+            playIdleAnimation(anim, true);
+            showBubble();
+        }
+    }
+}
+
+function showBubble(texts) {
+    const pool = texts || BUBBLE_TEXTS;
+    const text = pool[Math.floor(Math.random() * pool.length)];
+    bubble.textContent = text;
+    bubble.classList.add('show');
+
+    if (bubbleTimer) clearTimeout(bubbleTimer);
+    bubbleTimer = setTimeout(() => {
+        bubble.classList.remove('show');
+    }, 2000);
+}
+
+function hideBubble() {
+    if (bubbleTimer) {
+        clearTimeout(bubbleTimer);
+        bubbleTimer = null;
+    }
+    bubble.classList.remove('show');
+}
+
+// ========== 大小调整 ==========
+function adjustSize(factor, relative = false) {
+    if (relative) {
+        petScale *= factor;
+    } else {
+        petScale = factor;
+    }
+    petScale = Math.max(0.3, Math.min(3, petScale));
+
+    const newWidth = CONFIG.frameWidth * petScale;
+    const newHeight = CONFIG.frameHeight * petScale;
+
+    pet.style.width = `${newWidth}px`;
+    pet.style.height = `${newHeight}px`;
+
+    if (isIdleAnimating && currentIdleAnim) {
+        // 闲置动画播放中，更新动画 sprite 的大小
+        pet.style.backgroundSize = `${currentIdleAnim.cols * newWidth}px ${currentIdleAnim.rows * newHeight}px`;
+
+        const col = idleAnimFrame % currentIdleAnim.cols;
+        const row = Math.floor(idleAnimFrame / currentIdleAnim.cols);
+        const x = -col * newWidth;
+        const y = -row * newHeight;
+        pet.style.backgroundPosition = `${x}px ${y}px`;
+    } else {
+        // 正常转头模式
+        pet.style.backgroundSize = `${CONFIG.spriteCols * newWidth}px ${CONFIG.spriteRows * newHeight}px`;
+
+        // 重新设置帧位置（关键：position也要按比例）
+        const col = currentFrame % CONFIG.spriteCols;
+        const row = Math.floor(currentFrame / CONFIG.spriteCols);
+        const x = -col * newWidth;
+        const y = -row * newHeight;
+        pet.style.backgroundPosition = `${x}px ${y}px`;
+    }
+
+    // 大便堆积容器：跟随 petScale 同步缩放（init 时 petScale=0.6 为基准=100%显示）
+    const poopPile = document.getElementById('poop-pile');
+    if (poopPile) {
+        poopPile.style.transform = `scale(${petScale / 0.6})`;
+    }
+
+    contextMenu.classList.remove('show');
+}
+
+// ========== 置顶开关 ==========
+function toggleAlwaysOnTop() {
+    isAlwaysOnTop = !isAlwaysOnTop;
+    const toggleItem = document.getElementById('toggle-top');
+    toggleItem.textContent = isAlwaysOnTop ? '取消置顶' : '置顶';
+    
+    contextMenu.classList.remove('show');
+    
+    if (isElectron) {
+        window.electronAPI.toggleAlwaysOnTop();
+    }
+}
+
+// ========== 退出 ==========
+function exitApp() {
+    contextMenu.classList.remove('show');
+    if (isElectron) {
+        window.electronAPI.exitApp();
+    } else {
+        alert('浏览器模式下无法退出，请直接关闭页面');
+    }
+}
+
+// ========== 自动更新 ==========
+const updateDialog = document.getElementById('update-dialog');
+let isUpdateDownloading = false;
+
+function checkForUpdates() {
+    contextMenu.classList.remove('show');
+    if (!isElectron || !window.electronAPI.checkForUpdates) {
+        alert('浏览器模式下无法检查更新');
+        return;
+    }
+    showBubble(['正在检查更新...']);
+    window.electronAPI.checkForUpdates();
+}
+
+function showUpdateDialog(version, notes) {
+    document.getElementById('update-title').textContent = '发现新版本';
+    document.getElementById('update-version').textContent = `v${version}`;
+    document.getElementById('update-notes').textContent = notes || '暂无更新说明';
+    document.getElementById('update-progress-bar').classList.remove('show');
+    document.getElementById('update-progress-text').classList.remove('show');
+    document.getElementById('update-btns').style.display = 'flex';
+    document.getElementById('update-confirm-btn').textContent = '立即更新';
+    document.getElementById('update-confirm-btn').onclick = startDownloadUpdate;
+    updateDialog.classList.add('show');
+    isPayDialogOpen = true;  // 复用点击穿透逻辑
+    updateClickThrough();
+}
+
+function startDownloadUpdate() {
+    if (isUpdateDownloading) return;
+    isUpdateDownloading = true;
+    document.getElementById('update-title').textContent = '正在下载...';
+    document.getElementById('update-progress-bar').classList.add('show');
+    document.getElementById('update-progress-text').classList.add('show');
+    document.getElementById('update-btns').style.display = 'none';
+    window.electronAPI.downloadUpdate();
+}
+
+function closeUpdateDialog() {
+    updateDialog.classList.remove('show');
+    isPayDialogOpen = false;
+    updateClickThrough();
+    isUpdateDownloading = false;
+}
+
+function setupUpdateListeners() {
+    if (!isElectron || !window.electronAPI.onUpdateAvailable) return;
+
+    window.electronAPI.onUpdateAvailable((data) => {
+        showUpdateDialog(data.version, data.releaseNotes);
+    });
+
+    window.electronAPI.onUpdateNotAvailable(() => {
+        showBubble(['已经是最新版本~']);
+    });
+
+    window.electronAPI.onUpdateDownloadProgress((data) => {
+        document.getElementById('update-progress-fill').style.width = `${data.percent}%`;
+        document.getElementById('update-progress-text').textContent = `${data.percent}%`;
+    });
+
+    window.electronAPI.onUpdateDownloaded(() => {
+        isUpdateDownloading = false;
+        document.getElementById('update-title').textContent = '下载完成';
+        document.getElementById('update-progress-bar').classList.remove('show');
+        document.getElementById('update-progress-text').classList.remove('show');
+        document.getElementById('update-btns').style.display = 'flex';
+        document.getElementById('update-confirm-btn').textContent = '重启安装';
+        document.getElementById('update-confirm-btn').onclick = () => {
+            window.electronAPI.quitAndInstall();
+        };
+    });
+
+    window.electronAPI.onUpdateError((msg) => {
+        isUpdateDownloading = false;
+        document.getElementById('update-title').textContent = '更新失败';
+        document.getElementById('update-progress-bar').classList.remove('show');
+        document.getElementById('update-progress-text').classList.remove('show');
+        document.getElementById('update-btns').style.display = 'flex';
+        document.getElementById('update-confirm-btn').textContent = '关闭';
+        document.getElementById('update-confirm-btn').onclick = closeUpdateDialog;
+    });
+}
+
+// ========== 喂食猫条（付费动作） ==========
+function showPayDialog() {
+    // 关闭右键菜单
+    contextMenu.classList.remove('show');
+    // 如果正在播放动画，先停止
+    if (isIdleAnimating) {
+        stopIdleAnimation();
+    }
+    // 显示付款码弹窗
+    payDialog.classList.add('show');
+    isPayDialogOpen = true;
+    updateClickThrough();
+}
+
+function confirmPayAndFeed() {
+    // 关闭弹窗（两个按钮逻辑相同）
+    payDialog.classList.remove('show');
+    isPayDialogOpen = false;
+    updateClickThrough();
+    // 播放喂食猫条动画（手动触发，鼠标移动不打断）
+    playIdleAnimation(FEED_ANIMATION, true);
+}
+
+// ========== 初始化 ==========
+function init() {
+    // 设置初始大小（约为原始尺寸的60%）
+    petScale = 0.6;
+    const initWidth = CONFIG.frameWidth * petScale;
+    const initHeight = CONFIG.frameHeight * petScale;
+    pet.style.width = `${initWidth}px`;
+    pet.style.height = `${initHeight}px`;
+    pet.style.backgroundSize = `${CONFIG.spriteCols * initWidth}px ${CONFIG.spriteRows * initHeight}px`;
+
+    // 设置初始帧（正面）
+    setFrame(ANGLEKEYS[0]);
+
+    // 初始化大便堆积容器的基准缩放（=petScale/0.6=100%），与 adjustSize 计算一致
+    const poopPile = document.getElementById('poop-pile');
+    if (poopPile) {
+        poopPile.style.transform = `scale(${petScale / 0.6})`;
+    }
+
+    // 初始化点击穿透（默认透明区域可点穿）
+    updateClickThrough();
+
+    // 预加载闲置动画
+    preloadIdleAnimations();
+    
+    // 启动闲置检测
+    startIdleDetection();
+
+    // 启动自动更新监听
+    setupUpdateListeners();
+    
+    // 调试：按 D 键显示方向指示器
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'd' || e.key === 'D') {
+            directionIndicator.style.display = 
+                directionIndicator.style.display === 'block' ? 'none' : 'block';
+        }
+    });
+    
+    // 监听Electron的大小调整消息
+    if (isElectron && window.electronAPI.onAdjustSize) {
+        window.electronAPI.onAdjustSize((factor) => {
+            adjustSize(factor);
+        });
+    }
+    
+    // 监听Electron的置顶状态变化
+    if (isElectron && window.electronAPI.onTopStatusChanged) {
+        window.electronAPI.onTopStatusChanged((isOnTop) => {
+            isAlwaysOnTop = isOnTop;
+            const toggleItem = document.getElementById('toggle-top');
+            toggleItem.textContent = isAlwaysOnTop ? '取消置顶' : '置顶';
+        });
+    }
+    
+    // 监听全局鼠标移动（全屏跟踪）
+    if (isElectron && window.electronAPI.onGlobalMouseMove) {
+        window.electronAPI.onGlobalMouseMove((data) => {
+            // 始终缓存最新全局鼠标位置（跟随模式每帧移动、触碰检测需要）
+            currentGlobalMouse = data;
+            // 非跟随/非走路时，做转头跟踪
+            updateDirectionFromGlobal(data.dx, data.dy);
+        });
+    }
+}
+
+init();
+</script>
+
+</body>
+</html>

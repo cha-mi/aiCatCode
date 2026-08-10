@@ -1,0 +1,63 @@
+{
+  "name": "desktop-pet",
+  "version": "1.0.0",
+  "description": "桌面宠物",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "publish": "electron-builder --win --x64 --publish always"
+  },
+  "build": {
+    "appId": "com.desktop.pet",
+    "productName": "安琪",
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "你的GitHub用户名",
+      "repo": "aiCatCode"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.ico",
+      {
+        "from": "output",
+        "to": "output",
+        "filter": [
+          "index.html",
+          "sprite.webp",
+          "sprite_poop.webp",
+          "yawn_sprite.webp",
+          "groom_sprite.webp",
+          "feed_sprite.webp",
+          "scoop_sprite.webp",
+          "walk_right_sprite.webp",
+          "walk_left_sprite.webp",
+          "poop_icon.webp",
+          "wechatPayCode.jpg"
+        ]
+      }
+    ],
+    "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "directories": {
+      "output": "dist9"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

@@ -1,0 +1,81 @@
+# ========== 依赖 ==========
+node_modules/
+
+# ========== 构建产物 ==========
+dist*/
+*.exe
+*.blockmap
+*.nupkg
+*.appx
+*.snap
+*.deb
+*.rpm
+*.dmg
+*.zip
+*.tar.gz
+latest.yml
+builder-debug.yml
+builder-effective-config.yaml
+
+# ========== Python ==========
+__pycache__/
+*.pyc
+*.pyo
+
+# ========== 视频/帧素材（体积大，不在 git 中管理） ==========
+video/
+frames/
+frames_new/
+*.mp4
+*.avi
+*.mov
+
+# ========== 调试/临时文件 ==========
+output/debug_*
+output/*.npy
+output/*.json
+output/test_*
+output/frame0_*
+output/framefront.webp
+output/sprite_poop_debug.png
+contact_*.png
+debug_*.png
+debug_*.txt
+debug_*.py
+test_*.png
+test_*.py
+test_*.html
+frame_first.png
+new_first_frame.png
+wm_solutions_compare.png
+test_grabcut*.png
+test_greenscreen*.png
+test_color_threshold*.png
+test_final*.png
+test_edge*.png
+test_yawn_matting.png
+test_frame_*.png
+test_grabcut_checker.png
+
+# ========== 一次性分析脚本 ==========
+analyze_*.py
+decompose_leg_loss.py
+check_new_video.py
+fix_sprite.py
+fix_wm_v2.py
+process_video.py
+process_video2.py
+process_video_new.py
+extract_frames.py
+extract_frames_new.py
+extract_full.py
+make_icon.py
+
+# ========== 付款码（敏感信息，单独管理） ==========
+payCode/
+
+# ========== 系统文件 ==========
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
