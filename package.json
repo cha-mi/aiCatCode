@@ -1,6 +1,6 @@
 {
   "name": "desktop-pet",
-  "version": "1.0.0",
+  "version": "3.1.1",
   "description": "桌面宠物",
   "main": "main.js",
   "scripts": {
@@ -15,28 +15,38 @@
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
     "win": {
-      "target": "portable"
+      "target": "nsis",
+      "artifactName": "Anqi-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "include": "installer.nsh"
     },
     "publish": {
       "provider": "github",
-      "owner": "你的GitHub用户名",
+      "owner": "cha-mi",
       "repo": "aiCatCode"
     },
     "files": [
       "main.js",
       "preload.js",
+      "sticker_preload.js",
+      "get_icon_pos.ps1",
+      "anqi_delete.ps1",
+      "installer.nsh",
       "icon.ico",
       {
         "from": "output",
         "to": "output",
         "filter": [
           "index.html",
+          "sticker.html",
           "sprite.webp",
           "sprite_poop.webp",
           "yawn_sprite.webp",
           "groom_sprite.webp",
           "feed_sprite.webp",
           "scoop_sprite.webp",
+          "chew_sprite.webp",
           "walk_right_sprite.webp",
           "walk_left_sprite.webp",
           "poop_icon.webp",
@@ -50,7 +60,7 @@
       "en-US"
     ],
     "directories": {
-      "output": "dist9"
+      "output": "dist13"
     }
   },
   "devDependencies": {

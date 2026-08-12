@@ -421,6 +421,198 @@ html, body {
 .update-btn.secondary:hover {
     background: #e0e0e0;
 }
+
+/* 桌面文件选择弹窗 */
+#file-picker-dialog {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    pointer-events: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10005;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+
+#file-picker-dialog.show {
+    display: flex;
+}
+
+#file-picker-dialog .file-picker-card {
+    pointer-events: auto;
+}
+
+.file-picker-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 320px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+}
+
+.file-picker-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.file-picker-list {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    max-height: 280px;
+}
+
+.file-picker-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-picker-item:hover {
+    background: #f0f0f0;
+}
+
+.file-picker-item.empty {
+    color: #999;
+    text-align: center;
+    cursor: default;
+}
+
+.file-picker-item.empty:hover {
+    background: transparent;
+}
+
+.file-picker-btns {
+    display: flex;
+    justify-content: center;
+}
+
+.file-picker-btn {
+    padding: 8px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.file-picker-btn.secondary {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.file-picker-btn.secondary:hover {
+    background: #e0e0e0;
+}
+
+/* 删除确认弹窗 */
+#delete-confirm-dialog {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    pointer-events: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10005;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+
+#delete-confirm-dialog.show {
+    display: flex;
+}
+
+#delete-confirm-dialog .delete-confirm-card {
+    pointer-events: auto;
+}
+
+.delete-confirm-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 280px;
+    text-align: center;
+}
+
+.delete-confirm-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.delete-confirm-filename {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 14px;
+    word-break: break-all;
+    line-height: 1.5;
+    padding: 8px;
+    background: #f9f9f9;
+    border-radius: 6px;
+}
+
+.delete-confirm-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.delete-confirm-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.delete-confirm-btn.secondary {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.delete-confirm-btn.secondary:hover {
+    background: #e0e0e0;
+}
+
+.delete-confirm-btn.danger {
+    background: #fa5151;
+    color: #fff;
+}
+
+.delete-confirm-btn.danger:hover {
+    background: #e04545;
+}
+
+/* 拖拽文件悬停提示 */
+#pet-container.drag-over #pet {
+    filter: drop-shadow(0 0 12px #fa5151) drop-shadow(0 0 20px #fa515188);
+    transition: filter 0.2s;
+}
+
+#pet-container.drag-over #bubble {
+    opacity: 1 !important;
+    background: #fff5f5;
+    color: #fa5151;
+    border: 2px solid #fa5151;
+}
 </style>
 </head>
 <body>
@@ -485,6 +677,28 @@ html, body {
     </div>
 </div>
 
+<!-- 桌面文件选择弹窗 -->
+<div id="file-picker-dialog">
+    <div class="file-picker-card">
+        <div class="file-picker-title">选择要删除的桌面文件</div>
+        <div class="file-picker-list" id="file-picker-list"></div>
+        <div class="file-picker-btns">
+            <button class="file-picker-btn secondary" onclick="closeFilePicker()">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认弹窗 -->
+<div id="delete-confirm-dialog">
+    <div class="delete-confirm-card">
+        <div class="delete-confirm-title">是否删除该文件？</div>
+        <div class="delete-confirm-btns">
+            <button class="delete-confirm-btn secondary" onclick="cancelDelete()">不是</button>
+            <button class="delete-confirm-btn danger" onclick="confirmDelete()">删除</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ========== 配置 ==========
 const CONFIG = {
@@ -499,7 +713,7 @@ const CONFIG = {
     centerDistance: 50,
     // 闲置动画配置
     idleTimeout: 30000,  // 鼠标静止多久后触发动画（30秒）
-    poopIdleTimeout: 300000,  // 多久后切换为带💩的雪碧图（测试：5min），仅铲屎动画可重置此倒计时
+    poopIdleTimeout: 600000,  // 多久后切换为带💩的雪碧图并开始堆积（10分钟），仅铲屎动画可重置此倒计时
     animFps: 24,         // 动画帧率
 };
 
@@ -537,6 +751,15 @@ const SCOOP_ANIMATION = {
     frames: 121,
     cols: 12,
     rows: 11,
+};
+
+// 咀嚼动画（删除文件时播放，表示"吃掉"文件）
+const CHEW_ANIMATION = {
+    name: 'chew',
+    sprite: 'chew_sprite.webp',
+    frames: 241,
+    cols: 12,
+    rows: 21,
 };
 
 // 走路动画（跟随鼠标移动 / 散步）
@@ -626,6 +849,7 @@ let lastUserInteractionTime = Date.now();  // 💩倒计时基准时间，仅铲
 let currentIdleAnim = null;
 let idleAnimImages = {};  // 预加载的动画图片
 let isPoopMode = false;  // 是否处于💩模式（5分钟无铲屎后激活）
+let isContextMenuDeleteFlow = false;  // 右键菜单删除流程中（暂停定时动画）
 
 // 跟随模式状态
 let isFollowing = false;  // 是否正在跟随鼠标
@@ -637,6 +861,11 @@ let currentGlobalMouse = null;  // 当前全局鼠标位置（来自main进程�
 let lastFollowMoveTime = 0;  // 上次跟随移动时间
 let strollState = null;  // 散步状态（null=未散步）
 
+// 走到目标位置状态
+let walkToTarget = null;  // { x, y, callback } 目标位置和回调
+// 桌面文件删除状态
+let pendingDeleteFile = null;  // 待删除的文件信息
+
 // 大便堆积
 const POOP_MAX = 5;        // 最多堆积5个
 const POOP_WARN_THRESHOLD = 3;  // 超过3个时提醒
@@ -644,6 +873,13 @@ let poopPileCount = 0;     // 当前堆积数量
 let lastPoopPileTime = 0;  // 上次堆积大便的时间，用于控制继续堆积的间隔
 let poopBubbleInterval = null;  // 常驻气泡切换定时器（超3个时激活）
 const POOP_BUBBLE_PERSIST_TEXTS = ['好臭好臭~', '快铲屎呀!', '堆不下了~', '铲屎官快来!'];
+
+// 💩拖尾贴纸
+let poopTrailTimer = null;     // 每 0.5s 张贴纸的定时器
+let lastPoopTrailPos = null;   // 上次张贴纸的窗口坐标（避免重叠）
+const POOP_TRAIL_INTERVAL = 500;  // 0.5s
+const POOP_TRAIL_MIN_DIST = 40;   // 贴纸最小间距（像素）
+let isEndlessPoopStroll = false;  // 大便达上限后的无限散步模式
 
 // ========== DOM 元素 ==========
 const petContainer = document.getElementById('pet-container');
@@ -740,6 +976,10 @@ function preloadIdleAnimations() {
     const scoopImg = new Image();
     scoopImg.src = SCOOP_ANIMATION.sprite;
     idleAnimImages[SCOOP_ANIMATION.name] = scoopImg;
+    // 预加载咀嚼动画（删除文件时播放）
+    const chewImg = new Image();
+    chewImg.src = CHEW_ANIMATION.sprite;
+    idleAnimImages[CHEW_ANIMATION.name] = chewImg;
     // 预加载💩雪碧图
     const poopImg = new Image();
     poopImg.src = 'sprite_poop.webp';
@@ -782,6 +1022,8 @@ function resetIdleTimer() {
 function startIdleDetection() {
     // 启动闲置检测，每秒检查一次
     setInterval(() => {
+        // 右键菜单删除流程中：暂停所有定时动画
+        if (isContextMenuDeleteFlow) return;
         if (isIdleAnimating || isAnimating || isDragging || followStartTimer) return;
 
         // 💩模式下不播放随机闲置动画，等铲屎完成后恢复
@@ -809,7 +1051,7 @@ function startIdleDetection() {
     }, 1000);
 }
 
-function playIdleAnimation(anim, manual = false) {
+function playIdleAnimation(anim, manual = false, onComplete = null) {
     if (isIdleAnimating || isAnimating) return;
 
     // 正在走路/跟随/散步：先停止（避免动画互相覆盖、窗口移动冲突）
@@ -859,6 +1101,7 @@ function playIdleAnimation(anim, manual = false) {
             isManualAnim = false;
             currentIdleAnim = null;
             lastMouseMoveTime = Date.now();  // 重置闲置时间
+            if (onComplete) onComplete();  // 动画完成回调
             return;
         }
         
@@ -940,7 +1183,6 @@ function strollMove() {
     if (!strollState || !currentGlobalMouse) return;
 
     const m = currentGlobalMouse;
-    const screenW = m.screenWidth || window.screen.width || 1920;
     const winW = m.winWidth || 360;
     const speed = FOLLOW_CONFIG.walkSpeed;
     const dir = strollState.phase === 'out' ? strollState.direction : strollState.oppositeDir;
@@ -950,9 +1192,12 @@ function strollMove() {
     const curY = Math.round(m.winY ?? strollState.startY);
     let newX = curX + moveX;
 
-    // 边界限制：不走出屏幕
-    const minX = 0;
-    const maxX = Math.max(0, screenW - winW);
+    // 多显示器兼容：使用虚拟桌面边界（所有显示器并集）做碰壁判断
+    // 若主进程未提供虚拟桌面信息，降级到主屏 workArea.width（兼容旧版本）
+    const vMinX = (m.virtualMinX !== undefined) ? m.virtualMinX : 0;
+    const vMaxX = (m.virtualMaxX !== undefined) ? m.virtualMaxX : (m.screenWidth || window.screen.width || 1920);
+    const minX = vMinX;
+    const maxX = Math.max(vMinX, vMaxX - winW);
     newX = Math.max(minX, Math.min(maxX, newX));
 
     // 到达边界：提前切换返回
@@ -1026,6 +1271,9 @@ function switchToPoopSprite() {
 
     // 仅记录开始堆积的基准时间，首次拉屎延后到下一个 poopIdleTimeout
     lastPoopPileTime = Date.now();
+
+    // 进入💩模式：仅切换sprite等待堆积，散步和拖尾贴纸在堆满 POOP_MAX 后由 startEndlessPoopStroll 启动
+    showBubble(['没人理我~', '哼!']);
 }
 
 // ========== 大便堆积 ==========
@@ -1138,6 +1386,11 @@ function addPoopToPile() {
     pile.appendChild(poop);
     poopPileCount++;
 
+    // 达到上限时：自动开启无限散步模式 + 持续留💩贴纸（即便停止跟随，也会不断出来散步）
+    if (poopPileCount >= POOP_MAX) {
+        startEndlessPoopStroll();
+    }
+
     // 超过阈值时启动常驻气泡（每10秒切换内容），铲屎后由 clearPoopPile 清除
     if (poopPileCount > POOP_WARN_THRESHOLD && !poopBubbleInterval) {
         showBubble(POOP_BUBBLE_PERSIST_TEXTS);
@@ -1168,6 +1421,214 @@ function clearPoopPile() {
         poopBubbleInterval = null;
     }
     hideBubble();
+    // 同时清除屏幕上所有💩拖尾贴纸
+    clearPoopTrailStickers();
+    // 铲屎后关闭无限散步模式
+    stopEndlessPoopStroll();
+}
+
+// ========== 💩拖尾贴纸 ==========
+// 走路帧中猫体的位置（从 sprite 分析得出）
+// 帧尺寸 322×400，猫体 bbox: x[11,290] y[53,290]
+// 猫体底部在帧 y=290 处（帧高度 72.5%），猫体左右边缘在 x=11 和 x=290
+const CAT_BODY_LEFT = 11;    // 猫体左边缘在帧中的 x
+const CAT_BODY_RIGHT = 290;  // 猫体右边缘在帧中的 x
+const CAT_BODY_BOTTOM = 290; // 猫体底部在帧中的 y
+
+function dropPoopTrailSticker() {
+    const m = currentGlobalMouse;
+    if (!m) return;
+    const winX = Math.round(m.winX ?? 0);
+    const winY = Math.round(m.winY ?? 0);
+    const winW = m.winWidth || 360;
+    const winH = m.winHeight || 460;
+
+    // 判断角色走路方向
+    let dir = 'right';
+    if (strollState) {
+        dir = strollState.direction;
+    } else if (currentWalkAnim && currentWalkAnim.name === WALK_LEFT_ANIMATION.name) {
+        dir = 'left';
+    } else if (currentWalkAnim && currentWalkAnim.name === WALK_RIGHT_ANIMATION.name) {
+        dir = 'right';
+    }
+
+    // 当前角色实际缩放（走路时 ×WALK_SCALE）
+    const sw = petScale * WALK_SCALE;
+
+    // pet-container 居中于窗口：帧中心 = 窗口中心
+    const frameCenterX = winX + winW / 2;
+    const frameCenterY = winY + winH / 2;
+
+    // 帧在屏幕上的左上角（帧中心 - 帧尺寸/2）
+    const frameLeft = frameCenterX - (CONFIG.frameWidth * sw) / 2;
+    const frameTop = frameCenterY - (CONFIG.frameHeight * sw) / 2;
+
+    // 猫体边缘在屏幕上的绝对坐标
+    const catBodyLeft = frameLeft + CAT_BODY_LEFT * sw;
+    const catBodyRight = frameLeft + CAT_BODY_RIGHT * sw;
+    const catBodyBottom = frameTop + CAT_BODY_BOTTOM * sw;
+
+    // 贴纸放在角色身后：向右走→猫体左边缘，向左走→猫体右边缘
+    const stickerX = dir === 'right' ? catBodyLeft : catBodyRight;
+    // Y 在猫体底部（屁股/脚下位置）
+    const stickerY = catBodyBottom;
+
+    // 贴纸大小与定时掉落大便一致（80px），并跟随 petScale 缩放
+    const stickerSize = Math.round(80 * sw);
+
+    // 间距检查
+    if (lastPoopTrailPos) {
+        const d = Math.hypot(stickerX - lastPoopTrailPos.x, stickerY - lastPoopTrailPos.y);
+        if (d < POOP_TRAIL_MIN_DIST) return;
+    }
+    lastPoopTrailPos = { x: stickerX, y: stickerY };
+
+    // 通过 IPC 发送到全屏贴纸窗口（含贴纸大小）
+    if (isElectron && window.electronAPI && window.electronAPI.dropPoopSticker) {
+        const rot = Math.random() * 40 - 20;
+        window.electronAPI.dropPoopSticker(stickerX, stickerY, rot, stickerSize);
+    }
+}
+
+function startPoopTrailTimer() {
+    if (poopTrailTimer) return;
+    lastPoopTrailPos = null;
+    poopTrailTimer = setInterval(() => {
+        if (!isPoopMode) { stopPoopTrailTimer(); return; }
+        // 跟随模式 or 无限散步模式 or walkToPosition 走路中 才拉
+        const walkingNow = isFollowing || walkAnimInterval || walkToTarget || isEndlessPoopStroll || strollState;
+        if (walkingNow) dropPoopTrailSticker();
+    }, POOP_TRAIL_INTERVAL);
+}
+
+function stopPoopTrailTimer() {
+    if (poopTrailTimer) {
+        clearInterval(poopTrailTimer);
+        poopTrailTimer = null;
+    }
+    lastPoopTrailPos = null;
+}
+
+function clearPoopTrailStickers() {
+    if (isElectron && window.electronAPI && window.electronAPI.clearPoopStickers) {
+        window.electronAPI.clearPoopStickers();
+    }
+}
+
+// ========== 💩达上限后：无限散步+拉贴纸模式 ==========
+function startEndlessPoopStroll() {
+    if (isEndlessPoopStroll) return;
+    isEndlessPoopStroll = true;
+    // 停止跟随模式，避免冲突
+    if (isFollowing) stopFollow();
+    // 开启拖尾贴纸
+    if (isPoopMode) startPoopTrailTimer();
+    showBubble(['憋不住了!', '到处逛逛~']);
+    playEndlessStrollAnimation();
+}
+
+function stopEndlessPoopStroll() {
+    if (!isEndlessPoopStroll) return;
+    isEndlessPoopStroll = false;
+    // 停止散步
+    if (strollState) stopStrollAnimation();
+    stopWalkAnimation();
+    stopPoopTrailTimer();
+}
+
+function playEndlessStrollAnimation() {
+    if (!isEndlessPoopStroll || !isPoopMode) return;
+    // 散步动画正在播就跳过
+    if (strollState || walkAnimInterval || isFollowing) return;
+
+    isIdleAnimating = true;
+    isManualAnim = true;
+
+    // 随机方向
+    const direction = Math.random() < 0.5 ? 'left' : 'right';
+
+    const startX = currentGlobalMouse ? Math.round(currentGlobalMouse.winX ?? 0) : 0;
+    const startY = currentGlobalMouse ? Math.round(currentGlobalMouse.winY ?? 0) : 0;
+
+    // 随机散步时长 2~5 秒
+    const duration = 2000 + Math.random() * 3000;
+
+    strollState = {
+        direction: direction,
+        oppositeDir: direction === 'left' ? 'right' : 'left',
+        anim: direction === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION,
+        phase: 'stroll',     // 无限散步只有 'stroll' 阶段，不回原点
+        startTime: Date.now(),
+        duration: duration,
+        startX: startX,
+        startY: startY,
+        frame: 0,
+        interval: null,
+    };
+
+    // 走路放大尺寸
+    const sw = petScale * WALK_SCALE;
+    pet.style.width = `${CONFIG.frameWidth * sw}px`;
+    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+
+    setWalkAnimFrame(strollState.anim, 0);
+
+    const frameInterval = 1000 / CONFIG.animFps;
+    strollState.interval = setInterval(() => {
+        strollState.frame = (strollState.frame + 1) % strollState.anim.frames;
+        setWalkAnimFrame(strollState.anim, strollState.frame);
+
+        const elapsed = Date.now() - strollState.startTime;
+        // 散步时间到，换方向继续走
+        if (elapsed >= strollState.duration) {
+            stopStrollAnimation();
+            // 短暂停留后继续下一趟
+            setTimeout(() => {
+                if (isEndlessPoopStroll && isPoopMode) {
+                    playEndlessStrollAnimation();
+                }
+            }, 200 + Math.random() * 300);
+            return;
+        }
+
+        endlessStrollMove();
+    }, frameInterval);
+}
+
+function endlessStrollMove() {
+    if (!strollState || !currentGlobalMouse) return;
+
+    const m = currentGlobalMouse;
+    const winW = m.winWidth || 360;
+    const speed = FOLLOW_CONFIG.walkSpeed;
+    const dir = strollState.direction;
+    const moveX = dir === 'left' ? -speed : speed;
+
+    const curX = Math.round(m.winX ?? strollState.startX);
+    const curY = Math.round(m.winY ?? strollState.startY);
+    let newX = curX + moveX;
+
+    // 屏幕边界检测
+    const vMinX = (m.virtualMinX !== undefined) ? m.virtualMinX : 0;
+    const vMaxX = (m.virtualMaxX !== undefined) ? m.virtualMaxX : (m.screenWidth || window.screen.width || 1920);
+    const minX = vMinX;
+    const maxX = Math.max(vMinX, vMaxX - winW);
+    newX = Math.max(minX, Math.min(maxX, newX));
+
+    // 到达边界：反转方向
+    if (newX === minX || newX === maxX) {
+        strollState.direction = strollState.oppositeDir;
+        strollState.oppositeDir = dir;
+        strollState.anim = strollState.direction === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION;
+        strollState.startTime = Date.now();  // 重新计时
+    }
+
+    if (isElectron && window.electronAPI.dragWindow) {
+        window.electronAPI.dragWindow(newX, curY);
+        currentGlobalMouse.winX = newX;
+        currentGlobalMouse.winY = curY;
+    }
 }
 
 function triggerScoop() {
@@ -1226,14 +1687,18 @@ function playWalkAnimation(direction) {
     walkAnimInterval = setInterval(() => {
         walkAnimFrame = (walkAnimFrame + 1) % currentWalkAnim.frames;
         setWalkAnimFrame(currentWalkAnim, walkAnimFrame);
-        // 每帧同步执行：跟随移动 + 触碰检测
+        // 每帧同步执行：跟随移动 / 走到目标位置 / 触碰检测
         if (isFollowing) {
             followStep();
+        } else if (walkToTarget) {
+            walkToStep();
         }
     }, frameInterval);
-    // interval 创建后立即执行一次跟随移动，与尺寸变化同步
+    // interval 创建后立即执行一次移动，与尺寸变化同步
     if (isFollowing) {
         followStep();
+    } else if (walkToTarget) {
+        walkToStep();
     }
 }
 
@@ -1284,6 +1749,11 @@ function startFollow() {
         stopIdleAnimation();
     }
 
+    // 💩模式下跟随走路：同步开启拖尾贴纸（正常模式跟随不开）
+    if (isPoopMode) {
+        startPoopTrailTimer();
+    }
+
     // 提示气泡：2 秒后开始
     showBubble(['喵~ 2秒后出发!', '准备跟随~']);
 
@@ -1308,6 +1778,99 @@ function stopFollow() {
 
     isFollowing = false;
     stopWalkAnimation();
+
+    // 停止跟随时关闭拖尾贴纸（无限散步模式下保留，因其拖尾由 startEndlessPoopStroll 管理）
+    if (!isEndlessPoopStroll) {
+        stopPoopTrailTimer();
+    }
+}
+
+// ========== 走到目标位置 ==========
+function walkToPosition(targetX, targetY, callback) {
+    console.log('[walkToPosition] target=', targetX, targetY, 'currentGlobalMouse=', currentGlobalMouse ? JSON.stringify({winX: currentGlobalMouse.winX, winY: currentGlobalMouse.winY, winW: currentGlobalMouse.winWidth, winH: currentGlobalMouse.winHeight}) : 'null');
+    // 停止当前动画
+    if (isFollowing) stopFollow();
+    if (isIdleAnimating) stopIdleAnimation();
+    if (strollState) stopStrollAnimation();
+
+    walkToTarget = { x: targetX, y: targetY, callback };
+
+    // 根据目标方向决定走路方向（和 followStep 一致用 catCenter）
+    const m = currentGlobalMouse;
+    if (m) {
+        const catCenterX = (m.winX ?? 0) + (m.winWidth || 360) / 2;
+        const dx = targetX - catCenterX;
+        const needDir = dx >= 0 ? 'right' : 'left';
+        console.log('[walkToPosition] catCenterX=', catCenterX, 'dx=', dx, 'needDir=', needDir, 'isFollowing=', isFollowing, 'isIdleAnimating=', isIdleAnimating, 'walkAnimInterval=', !!walkAnimInterval);
+        playWalkAnimation(needDir);
+    } else {
+        console.warn('[walkToPosition] no currentGlobalMouse, playing right walk anyway');
+        playWalkAnimation('right');
+    }
+}
+
+function walkToStep() {
+    if (!walkToTarget || !currentGlobalMouse) return;
+
+    const m = currentGlobalMouse;
+    const winW = m.winWidth || 360;
+    const winH = m.winHeight || 460;
+    const sw = petScale * WALK_SCALE;
+    const catW = CONFIG.frameWidth * sw;
+    const catH = CONFIG.frameHeight * sw;
+    // 和 followStep 一致：用窗口中心作为角色中心
+    const catCenterX = (m.winX ?? 0) + winW / 2;
+    const catCenterY = (m.winY ?? 0) + winH / 2;
+
+    // 目标 Y 已在 main.js 里设为图标中心；这里再上移半个猫身，让头部（sprite 顶部）对准文件
+    const adjustedTargetY = walkToTarget.y - catH / 2;
+    const dx = walkToTarget.x - catCenterX;
+    const dy = adjustedTargetY - catCenterY;
+    const dist = Math.hypot(dx, dy);
+
+    // 到达目标（距离 < 15 像素算到达）
+    if (dist < 15) {
+        console.log('[walkToStep] arrived, dist=', dist, 'target=', walkToTarget.x, walkToTarget.y, 'catCenter=', catCenterX, catCenterY, 'catH=', catH);
+        const cb = walkToTarget.callback;
+        walkToTarget = null;
+        stopWalkAnimation();
+        if (cb) cb();
+        return;
+    }
+
+    // 切换方向
+    const needDir = dx >= 0 ? 'right' : 'left';
+    if (!currentWalkAnim || (needDir === 'left' && currentWalkAnim.name !== WALK_LEFT_ANIMATION.name) ||
+        (needDir === 'right' && currentWalkAnim.name !== WALK_RIGHT_ANIMATION.name)) {
+        playWalkAnimation(needDir);
+    }
+
+    // 朝目标移动
+    const speed = FOLLOW_CONFIG.walkSpeed;
+    if (!isFinite(dist) || dist < 1e-6) { return; }
+    let ux = dx / dist;
+    let uy = dy / dist;
+    if (!isFinite(ux) || !isFinite(uy)) { return; }
+    const moveX = ux * speed;
+    const moveY = uy * speed;
+    if (!isFinite(moveX) || !isFinite(moveY)) { return; }
+
+    if (Math.abs(moveX) > 0.1 || Math.abs(moveY) > 0.1) {
+        const curX = m.winX ?? 0;
+        const curY = m.winY ?? 0;
+        const newX = Math.round(curX + moveX);
+        const newY = Math.round(curY + moveY);
+        if (!isFinite(newX) || !isFinite(newY)) { return; }
+        if (isElectron && window.electronAPI.dragWindow) {
+            const nx = Number(newX);
+            const ny = Number(newY);
+            if (isFinite(nx) && isFinite(ny)) {
+                window.electronAPI.dragWindow(nx, ny).catch(() => {});
+                currentGlobalMouse.winX = nx;
+                currentGlobalMouse.winY = ny;
+            }
+        }
+    }
 }
 
 function followStep() {
@@ -1925,6 +2488,391 @@ function setupUpdateListeners() {
     });
 }
 
+// ========== 删除桌面文件 ==========
+const filePickerDialog = document.getElementById('file-picker-dialog');
+const filePickerList = document.getElementById('file-picker-list');
+const deleteConfirmDialog = document.getElementById('delete-confirm-dialog');
+
+async function startDeleteDesktopFile() {
+    contextMenu.classList.remove('show');
+    if (!isElectron || !window.electronAPI.listDesktopFiles) {
+        alert('浏览器模式下无法操作桌面文件');
+        return;
+    }
+
+    showBubble(['去找找桌面上的文件~']);
+
+    // 获取桌面文件列表
+    const files = await window.electronAPI.listDesktopFiles();
+
+    if (!files || files.length === 0) {
+        showBubble(['桌面上没有文件呀~']);
+        return;
+    }
+
+    // 填充文件列表
+    filePickerList.innerHTML = '';
+    files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'file-picker-item';
+        item.textContent = file.name;
+        item.onclick = () => selectFileForDelete(file);
+        filePickerList.appendChild(item);
+    });
+
+    // 显示文件选择弹窗
+    filePickerDialog.classList.add('show');
+    isPayDialogOpen = true;  // 复用点击穿透逻辑
+    updateClickThrough();
+}
+
+function closeFilePicker() {
+    filePickerDialog.classList.remove('show');
+    isPayDialogOpen = false;
+    updateClickThrough();
+}
+
+function selectFileForDelete(file) {
+    closeFilePicker();
+    pendingDeleteFile = file;
+
+    // 暂停定时动画（删除完成后恢复）
+    isContextMenuDeleteFlow = true;
+
+    showBubble(['去看看这个文件~']);
+
+    // 传绝对路径让 main.js 精确定位（扩展名隐藏的文件也能匹配）
+    const lookupPath = file.path || file.name;
+
+    const gotoPos = async () => {
+        let targetX, targetY;
+        try {
+            if (isElectron && window.electronAPI.getDesktopFilePosition) {
+                const pos = await window.electronAPI.getDesktopFilePosition(lookupPath);
+                targetX = pos.x;
+                targetY = pos.y;
+            } else {
+                throw new Error('no api');
+            }
+        } catch (e) {
+            // 降级：如果获取位置失败，再用屏幕中的合理随机位置
+            const m = currentGlobalMouse;
+            const screenW = m ? m.screenWidth : window.screen.width;
+            const screenH = m ? m.screenHeight : window.screen.height;
+            targetX = Math.random() * (screenW - 200) + 100;
+            targetY = Math.random() * (screenH * 0.5) + screenH * 0.3;
+        }
+
+        // 走到目标位置
+        walkToPosition(targetX, targetY, () => {
+            // 到达后弹出确认
+            showBubble(['是它吗?']);
+            deleteConfirmDialog.classList.add('show');
+            isPayDialogOpen = true;
+            updateClickThrough();
+        });
+    };
+    gotoPos();
+}
+
+// ========== 右键菜单"呼叫安琪铲除"流程 ==========
+// 从 Windows 右键菜单触发：角色走到文件在桌面的位置，弹窗确认，咀嚼动画，删除
+async function startContextMenuDelete(filePath) {
+    console.log('[startContextMenuDelete] entry, filePath=', filePath);
+    // 暂停所有定时动画（闲置/💩），删除流程结束后恢复
+    isContextMenuDeleteFlow = true;
+
+    // 停止当前动画
+    if (isFollowing) stopFollow();
+    if (isIdleAnimating) stopIdleAnimation();
+    if (strollState) stopStrollAnimation();
+    if (walkAnimInterval) stopWalkAnimation();
+
+    // 从路径提取文件名
+    const fileName = filePath.split(/[\\/]/).pop();
+
+    // 设置待删除文件（保存完整路径）
+    pendingDeleteFile = { name: fileName, path: filePath };
+
+    showBubble(['收到! 去找它~']);
+
+    // 获取文件在桌面上的准确位置
+    // 注意：传完整 filePath（不是仅文件名），让 main.js 能精确路径传给PowerShell，也能fallback时用绝对路径stem匹配
+    let targetX, targetY, accurate = false;
+    try {
+        if (isElectron && window.electronAPI.getDesktopFilePosition) {
+            const pos = await window.electronAPI.getDesktopFilePosition(filePath);
+            console.log('[startContextMenuDelete] got pos:', JSON.stringify(pos));
+            targetX = pos.x;
+            targetY = pos.y;
+            accurate = !!pos.accurate;
+        } else {
+            throw new Error('no api');
+        }
+    } catch (e) {
+        console.warn('[startContextMenuDelete] getDesktopFilePosition err:', e);
+        // 降级：屏幕中部
+        const m = currentGlobalMouse;
+        const screenW = m ? m.screenWidth : window.screen.width;
+        const screenH = m ? m.screenHeight : window.screen.height;
+        targetX = (screenW / 2);
+        targetY = (screenH / 2);
+    }
+
+    console.log('[startContextMenuDelete] walk to target (', targetX, ',', targetY, ') accurate=', accurate);
+    // 走到文件位置，到达后弹窗确认
+    walkToPosition(targetX, targetY, () => {
+        showBubble(['是它吗?']);
+        deleteConfirmDialog.classList.add('show');
+        isPayDialogOpen = true;
+        updateClickThrough();
+    });
+}
+
+// 删除流程结束：恢复定时动画计时
+function endContextMenuDeleteFlow() {
+    isContextMenuDeleteFlow = false;
+    // 重置闲置/💩计时器，不把删除流程耗时计入
+    lastMouseMoveTime = Date.now();
+    lastUserInteractionTime = Date.now();
+}
+
+function cancelDelete() {
+    deleteConfirmDialog.classList.remove('show');
+    isPayDialogOpen = false;
+    updateClickThrough();
+    pendingDeleteFile = null;
+    showBubble(['好吧~', '认错了~']);
+    endContextMenuDeleteFlow();
+}
+
+async function confirmDelete() {
+    if (!pendingDeleteFile) return;
+
+    const file = pendingDeleteFile;
+    console.log('[confirmDelete] begin deleting path=', file.path);
+
+    deleteConfirmDialog.classList.remove('show');
+    isPayDialogOpen = false;
+    updateClickThrough();
+    pendingDeleteFile = null;
+
+    // 强制停止所有动画，确保咀嚼动画能正常播放
+    if (isFollowing) stopFollow();
+    if (strollState) stopStrollAnimation();
+    if (walkAnimInterval) stopWalkAnimation();
+    if (isIdleAnimating) stopIdleAnimation();
+    isAnimating = false;
+    // 再等一帧，确保所有状态标志刷新
+    await new Promise(r => setTimeout(r, 16));
+
+    // 删除 + 咀嚼，两者独立执行；都完成后才提示用户已删除
+    // 1) 删除 Promise（加超时兜底）
+    const deletePromise = Promise.race([
+        (async () => {
+            try {
+                if (!isElectron || !window.electronAPI.deleteFile) {
+                    return { success: false, error: '当前环境不支持摧毁' };
+                }
+                const r = await window.electronAPI.deleteFile(file.path);
+                console.log('[confirmDelete] delete result:', JSON.stringify(r));
+                return r;
+            } catch (e) {
+                console.error('[confirmDelete] deleteFile throw:', e);
+                return { success: false, error: e.message || '删除异常' };
+            }
+        })(),
+        new Promise(resolve => setTimeout(() => {
+            console.error('[confirmDelete] deleteFile timeout (15s)');
+            resolve({ success: false, error: '删除超时' });
+        }, 15000))
+    ]);
+
+    // 2) 咀嚼 Promise：手写帧循环，绕过 playIdleAnimation 守卫（保证一定播放）
+    const chewPromise = new Promise(resolve => {
+        // 先强制清理所有动画状态（防止走路/闲置 interval 覆盖咀嚼帧）
+        if (isFollowing) stopFollow();
+        if (strollState) stopStrollAnimation();
+        if (walkAnimInterval) stopWalkAnimation();
+        if (isIdleAnimating) stopIdleAnimation();
+        isIdleAnimating = false;
+        isAnimating = false;
+        isManualAnim = false;
+
+        const anim = CHEW_ANIMATION;
+        const fps = CONFIG.animFps || 24;
+        const frameInterval = 1000 / fps;
+        let frame = 0;
+        let chewInterval = null;
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            if (chewInterval) { clearInterval(chewInterval); chewInterval = null; }
+            // 恢复待机 sprite
+            const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+            pet.style.backgroundImage = `url('${restoreSprite}')`;
+            pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+            currentFrame = -1;
+            setFrame(lastFrame);
+            resolve();
+        };
+        chewInterval = setInterval(() => {
+            if (frame >= anim.frames) { finish(); return; }
+            setIdleAnimFrame(anim, frame);
+            frame++;
+        }, frameInterval);
+        console.log('[confirmDelete] chew playing inline, frames=', anim.frames, 'intervalMs=', frameInterval);
+    });
+
+    // 3) 两者都完成后再显示结果（咀嚼结束提示已删除 = 用户要求）
+    await chewPromise;
+    const result = await deletePromise;
+    console.log('[confirmDelete] both complete, result:', JSON.stringify(result));
+    if (result.success) {
+        let successMsgs;
+        if (result.method === 'app-trash') {
+            successMsgs = ['已帮你收走啦~', '(移到安琪临时区)'];
+            console.log('[destroy] 已移动到安琪临时回收站:', result.movedTo);
+        } else if (result.method === 'powershell') {
+            successMsgs = ['已帮你删掉啦~', '进回收站啦~'];
+        } else {
+            successMsgs = ['已帮你删掉啦~', '干净了~'];
+        }
+        showBubble(successMsgs);
+    } else {
+        console.error('deleteFile failed:', result.error, 'path:', file.path);
+        showBubble(['摧毁失败呀...', (result.error && result.error.length < 20 ? result.error : '出了点问题~')]);
+    }
+    // 删除流程结束，恢复定时动画
+    endContextMenuDeleteFlow();
+}
+
+// ========== 拖拽文件到宠物摧毁 ==========
+function initDragAndDropDestroy() {
+    // 监听整个 body 的拖拽事件，确保点击穿透时也能接收到
+    const targets = [document.body, petContainer];
+
+    targets.forEach(el => {
+        // 拖拽进入/悬停：显示视觉提示，并阻止默认打开文件行为
+        el.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isElectron) return;
+            if (hasFileInDrag(e)) {
+                petContainer.classList.add('drag-over');
+                showBubble(['拖给我摧毁!', '我来帮你处理掉~']);
+                if (bubbleTimer) { clearTimeout(bubbleTimer); bubbleTimer = null; }
+                // 确保点击穿透暂时关闭，否则无法接收 drop
+                if (window.electronAPI && window.electronAPI.setIgnoreMouseEvents) {
+                    window.electronAPI.setIgnoreMouseEvents(false);
+                }
+            }
+        }, false);
+
+        el.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (hasFileInDrag(e)) {
+                e.dataTransfer.dropEffect = 'move';
+                petContainer.classList.add('drag-over');
+            }
+        }, false);
+
+        el.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // 仅当鼠标真正离开宠物区域时才清除（避免 body/petContainer 边界闪烁）
+            if (e.target === petContainer || !petContainer.contains(e.relatedTarget)) {
+                petContainer.classList.remove('drag-over');
+                hideBubble();
+                updateClickThrough();
+            }
+        }, false);
+
+        el.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            petContainer.classList.remove('drag-over');
+
+            if (!isElectron || !e.dataTransfer || !e.dataTransfer.files) {
+                updateClickThrough();
+                return;
+            }
+
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length === 0) {
+                updateClickThrough();
+                return;
+            }
+
+            // 每次只处理第一个文件
+            const droppedFile = files[0];
+            // Electron 给 File 对象加了 path 属性，包含绝对路径
+            const filePath = droppedFile.path || droppedFile.name;
+            const fileName = droppedFile.name;
+            const fileSize = droppedFile.size;
+
+            handleDroppedFileForDestroy({
+                name: fileName,
+                path: filePath,
+                size: fileSize,
+                mtime: Date.now(),
+            });
+
+            updateClickThrough();
+        }, false);
+    });
+}
+
+function hasFileInDrag(e) {
+    if (!e.dataTransfer) return false;
+    // types 包含 'Files' 表示有文件被拖拽
+    const types = e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+    return types.some(t => t && t.toLowerCase() === 'files');
+}
+
+function handleDroppedFileForDestroy(file) {
+    pendingDeleteFile = file;
+
+    showBubble(['收到! 我去处理~', '走到位置看看~']);
+
+    // 根据被拖文件的路径，结合当前鼠标位置决定走向
+    const gotoPos = async () => {
+        let targetX, targetY;
+        // 优先用当前拖拽释放时的全局鼠标位置（更接近真实文件位置）
+        const m = currentGlobalMouse;
+        if (m && m.x && m.y) {
+            targetX = m.x;
+            targetY = m.y;
+        } else if (isElectron && window.electronAPI.getDesktopFilePosition) {
+            try {
+                const pos = await window.electronAPI.getDesktopFilePosition(file.name);
+                targetX = pos.x;
+                targetY = pos.y;
+            } catch (e) {
+                const screenW = window.screen.width;
+                const screenH = window.screen.height;
+                targetX = screenW / 2;
+                targetY = screenH / 2;
+            }
+        } else {
+            const screenW = window.screen.width;
+            const screenH = window.screen.height;
+            targetX = screenW / 2;
+            targetY = screenH / 2;
+        }
+
+        walkToPosition(targetX, targetY, () => {
+            showBubble(['摧毁它吗?']);
+            deleteConfirmDialog.classList.add('show');
+            isPayDialogOpen = true;
+            updateClickThrough();
+        });
+    };
+    gotoPos();
+}
+
 // ========== 喂食猫条（付费动作） ==========
 function showPayDialog() {
     // 关闭右键菜单
@@ -1978,12 +2926,22 @@ function init() {
 
     // 启动自动更新监听
     setupUpdateListeners();
-    
-    // 调试：按 D 键显示方向指示器
+
+    // 初始化拖拽文件到宠物摧毁的功能
+    initDragAndDropDestroy();
+
+    // 调试：按 D 键显示方向指示器；按 F12 切换 DevTools（独立窗口 + 临时取消置顶/穿透）
     document.addEventListener('keydown', (e) => {
         if (e.key === 'd' || e.key === 'D') {
-            directionIndicator.style.display = 
+            directionIndicator.style.display =
                 directionIndicator.style.display === 'block' ? 'none' : 'block';
+        }
+        // F12 切换 DevTools（临时取消置顶和点击穿透，便于点击 DevTools）
+        if (e.key === 'F12') {
+            e.preventDefault();
+            if (isElectron && window.electronAPI.toggleDevTools) {
+                window.electronAPI.toggleDevTools();
+            }
         }
     });
     
@@ -2010,6 +2968,13 @@ function init() {
             currentGlobalMouse = data;
             // 非跟随/非走路时，做转头跟踪
             updateDirectionFromGlobal(data.dx, data.dy);
+        });
+    }
+
+    // 监听右键菜单"呼叫安琪铲除"触发
+    if (isElectron && window.electronAPI.onContextMenuDeleteFile) {
+        window.electronAPI.onContextMenuDeleteFile((filePath) => {
+            startContextMenuDelete(filePath);
         });
     }
 }
