@@ -13,31 +13,18 @@ autoUpdater.setFeedURL({
 });
 
 // ========== 单实例锁 + 右键菜单启动参数 ==========
-// 解析命令行参数中的 --delete-file <path> 或 --delete-file-pending
-// 健壮解析：跳过 --delete-file 后面紧跟的其他 --xxx 参数（Electron 自带参数会插入其中）
+// 扫描 argv 找第一个看起来像文件路径的参数（跳过 exe 自身和所有 -- flag）
+// 这样不依赖任何 flag 的固定位置，即使 Electron 自动注入 --allow-file-access-from-files 等参数也不会出错
 function parseDeleteFileArg(argv) {
-    // 新方式：--delete-file-pending（路径在临时文件中，避免命令行中文乱码）
-    if (argv.includes('--delete-file-pending')) {
-        try {
-            const tempFile = path.join(os.tmpdir(), 'anqi_delete_path.txt');
-            const raw = fs.readFileSync(tempFile, 'utf-8').trim();
-            // 去掉可能的 BOM 和尾随换行
-            const cleaned = raw.replace(/^\uFEFF/, '').replace(/\r?\n$/, '').trim();
-            try { fs.unlinkSync(tempFile); } catch (_) {}
-            if (cleaned && path.isAbsolute(cleaned)) return cleaned;
-        } catch (_) {}
-        return null;
-    }
-
-    // 旧方式：--delete-file <path>（命令行传路径，中文可能乱码）
-    const idx = argv.indexOf('--delete-file');
-    if (idx < 0) return null;
-    for (let i = idx + 1; i < argv.length; i++) {
+    for (let i = 1; i < argv.length; i++) {
         const arg = argv[i];
         if (!arg) continue;
+        // 跳过所有 flag（--xxx / -x）
         if (arg.startsWith('--') || arg.startsWith('-')) continue;
-        let candidate = arg.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-        if (path.isAbsolute(candidate)) {
+        // 去引号
+        let candidate = arg.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+        // 检查是否像 Windows 绝对路径（X:\...）
+        if (/^[a-zA-Z]:[\\/]/.test(candidate)) {
             return candidate;
         }
     }
@@ -48,14 +35,14 @@ const pendingDeleteFromArgv = parseDeleteFileArg(process.argv);
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-    // 已有实例运行，退出
+    // 已有实例运行，退出（second-instance 事件会在主实例中触发）
     app.quit();
 } else {
     app.on('second-instance', (event, commandLine, workingDirectory) => {
         // 第二实例启动（右键菜单触发），解析文件路径并通知主窗口
         console.log('[second-instance] commandLine=', JSON.stringify(commandLine));
         const filePath = parseDeleteFileArg(commandLine);
-        console.log('[second-instance] parsed filePath=', filePath);
+        console.log('[second-instance] parsed filePath=', filePath, 'exists=', filePath ? fs.existsSync(filePath) : 'N/A');
 
         if (filePath) {
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -79,6 +66,9 @@ let mainWindow;
 let stickerWindow = null;
 let stickerOriginX = 0;  // 贴纸窗口在虚拟桌面中的起点 X
 let stickerOriginY = 0;  // 贴纸窗口在虚拟桌面中的起点 Y
+let fxWindow = null;
+let fxOriginX = 0;  // fx 窗口虚拟桌面起点 X
+let fxOriginY = 0;  // fx 窗口虚拟桌面起点 Y
 let tray = null;
 let isAlwaysOnTop = true;
 let mouseTrackInterval = null;
@@ -134,6 +124,8 @@ function createWindow() {
 
     // 创建全屏透明贴纸窗口（用于💩拖尾贴纸）
     createStickerWindow();
+    // 创建全屏透明特效窗口（用于准星/爆炸/开枪等覆盖层）
+    createFxWindow();
 }
 
 function createStickerWindow() {
@@ -188,6 +180,96 @@ function createStickerWindow() {
         stickerWindow = null;
     });
 }
+
+function createFxWindow() {
+    const displays = screen.getAllDisplays();
+    let vMinX = Infinity, vMinY = Infinity, vMaxX = -Infinity, vMaxY = -Infinity;
+    for (const d of displays) {
+        vMinX = Math.min(vMinX, d.bounds.x);
+        vMinY = Math.min(vMinY, d.bounds.y);
+        vMaxX = Math.max(vMaxX, d.bounds.x + d.bounds.width);
+        vMaxY = Math.max(vMaxY, d.bounds.y + d.bounds.height);
+    }
+    const winW = vMaxX - vMinX;
+    const winH = vMaxY - vMinY;
+    fxOriginX = vMinX;
+    fxOriginY = vMinY;
+
+    fxWindow = new BrowserWindow({
+        width: winW,
+        height: winH,
+        x: vMinX,
+        y: vMinY,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        resizable: false,
+        skipTaskbar: true,
+        hasShadow: false,
+        backgroundColor: '#00000000',
+        focusable: false,
+        webPreferences: {
+            preload: path.join(__dirname, 'fx_preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+        }
+    });
+
+    fxWindow.setAlwaysOnTop(true, 'screen-saver');
+    fxWindow.setVisibleOnAllWorkspaces(true);
+    fxWindow.setIgnoreMouseEvents(true, { forward: false });
+
+    fxWindow.loadFile(path.join(__dirname, 'output', 'fx.html'));
+
+    fxWindow.on('close', (e) => {
+        if (!app.isQuitting) { e.preventDefault(); fxWindow.hide(); }
+    });
+    fxWindow.on('closed', () => { fxWindow = null; });
+}
+
+// ============== FX 相关 IPC（给渲染进程用） ==============
+function sendToFx(channel, payload) {
+    if (fxWindow && !fxWindow.isDestroyed()) {
+        fxWindow.webContents.send(channel, payload);
+    }
+}
+
+/**
+ * cfg: {
+ *   key,            // string 唯一标识：crosshair / explosion-<id>
+ *   sprite,         // string 文件名：crosshair_sprite.webp
+ *   frames, cols, rows, frameW, frameH,
+ *   x, y,           // number 屏幕绝对坐标（中心点）
+ *   w, h,           // number 实际显示尺寸（图标大小 110x130 之类）
+ *   fps, loop       // bool 是否循环播放
+ * }
+ */
+ipcMain.handle('fx-play', async (event, cfg) => {
+    if (!cfg || !cfg.key) return false;
+    const wrapped = Object.assign({}, cfg, {
+        _winX: fxOriginX,
+        _winY: fxOriginY,
+    });
+    sendToFx('fx-play', wrapped);
+    return true;
+});
+
+ipcMain.handle('fx-stop', async (event, { key }) => {
+    sendToFx('fx-stop', { key });
+    return true;
+});
+
+ipcMain.handle('fx-stop-all', async () => {
+    sendToFx('fx-stop-all');
+    return true;
+});
+
+// 收到 fx.html 发来的播放结束（主要是一次性播放）
+ipcMain.on('fx-play-end', (event, { key }) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('fx-play-ended', { key });
+    }
+});
 
 function createTray() {
     const iconPath = path.join(__dirname, 'icon.ico');
@@ -430,20 +512,10 @@ ipcMain.handle('delete-file', async (event, filePath) => {
             await shell.trashItem(normalizedPath);
             return { success: true, path: normalizedPath, method: 'shell' };
         } catch (shellErr) {
-            console.warn('[delete-file] shell.trashItem 失败，尝试 PowerShell 回退方案:', shellErr.message);
+            console.warn('[delete-file] shell.trashItem 失败，直接走安琪回收站兜底（跳过 PowerShell，避免弹黑框）:', shellErr.message);
 
-            // ========== 尝试 2：PowerShell 调用 VB.NET FileSystem.DeleteFile（SendToRecycleBin 模式，不弹确认更稳定） ==========
-            try {
-                const psResult = await trashItemByPowerShell(normalizedPath);
-                if (psResult.success) {
-                    return { success: true, path: normalizedPath, method: 'powershell' };
-                }
-                console.warn('[delete-file] PowerShell 回退亦失败:', psResult.error);
-            } catch (psErr) {
-                console.warn('[delete-file] PowerShell 回退异常:', psErr.message);
-            }
-
-            // ========== 尝试 3：终极回退 —— 把文件移动到应用自己的"安琪回收站"目录（保证不会真的丢文件） ==========
+            // ========== 尝试 2：终极回退 —— 把文件移动到应用自己的"安琪回收站"目录（保证不会真的丢文件） ==========
+            // （不再使用 trashItemByPowerShell：execFile powershell.exe 可能导致短暂弹窗，用户体验不佳）
             const fallback = await moveToAppTrashBin(normalizedPath);
             if (fallback.success) {
                 return {
@@ -451,11 +523,10 @@ ipcMain.handle('delete-file', async (event, filePath) => {
                     path: normalizedPath,
                     method: 'app-trash',
                     movedTo: fallback.movedTo,
-                    warning: '回收站不可用，已移动到安琪临时回收站'
+                    warning: '系统回收站不可用，已移动到安琪临时回收站'
                 };
             }
 
-            // 三重保险都失败时才返回失败，并把三次原因都带上便于排查
             return {
                 success: false,
                 error: `删除失败：${shellErr.message}`,
@@ -551,12 +622,217 @@ async function moveToAppTrashBin(filePath) {
     }
 }
 
-// 获取桌面图标准确位置（通过 PowerShell 跨进程读取桌面 ListView）
-// 返回屏幕绝对坐标 {x, y, accurate, lvX, lvY, match, reason}
-// 坐标语义：返回的是"宠物应该走到的屏幕点"=图标项中心下方（让宠物脚站在图标正下方，头部不遮挡）
+// 桌面图标准确位置缓存：避免每次右键删除都启动 PowerShell（PowerShell 启动慢且可能闪屏）
+// 缓存结构：{ ts: number, items: Array<{name, x, y}> }  items 中 x,y 是图标中心屏幕绝对坐标
+let desktopIconCache = null;
+const DESKTOP_ICON_CACHE_TTL = 5000;  // 5 秒内复用，避免连续调用反复启动 PowerShell
+
+// 通过 PowerShell + C# UIAutomation 读取桌面图标的真实屏幕坐标
+// 用 -WindowStyle Hidden + windowsHide 双重隐藏，避免闪屏
+// 返回 Array<{name, x, y}>  其中 x,y 是图标中心点屏幕绝对坐标
+//
+// 为什么用 PowerShell + C#？
+//   - Electron 内置 API（如 screen.getCursorScreenPoints）只封装了少量常用功能
+//   - 读取桌面 SysListView32 的图标位置不在内置 API 中
+//   - JS 层调用 user32.dll 需要 FFI 桥接层（koffi/ffi-napi 需要新依赖）
+//   - PowerShell + C# 是无新依赖的方案
+//
+// 为什么用 UIAutomation 而不是 SendMessage LVM_GETITEMTEXT？
+//   - LVM_GETITEMTEXT 跨进程时无法写入 pszText 指向的内存（需要 VirtualAllocEx）
+//   - UIAutomation 是 Windows 高层 API，无跨进程内存问题，直接读取项的 BoundingRectangle
+function readDesktopIconsViaPowerShell() {
+    return new Promise((resolve) => {
+        // C# 代码：用 EnumWindows 找到桌面 SysListView32（可能在 Progman 或 WorkerW 下）
+        // 然后用 UIAutomation 读取每个 item 的 Name 和 BoundingRectangle
+        // 输出 JSON 数组：[{"name":"...", "x":123, "y":456}, ...]
+        const psScript = `
+$ErrorActionPreference = 'Stop'
+# 关键：设置输出编码为 UTF-8，否则中文文件名会被 GBK 编码输出，Node.js 按 UTF-8 解码会乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$csCode = @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Windows.Automation;
+
+public class DesktopIconsUA {
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassNameW(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr FindWindowExW(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr hWnd);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    static IntPtr foundListView = IntPtr.Zero;
+
+    static IntPtr FindChildRecursive(IntPtr parent, string targetClass, int maxDepth) {
+        if (maxDepth <= 0) return IntPtr.Zero;
+        IntPtr child = IntPtr.Zero;
+        while (true) {
+            child = FindWindowExW(parent, child, null, null);
+            if (child == IntPtr.Zero) break;
+            StringBuilder cls = new StringBuilder(256);
+            GetClassNameW(child, cls, 256);
+            if (cls.ToString() == targetClass) return child;
+            IntPtr deeper = FindChildRecursive(child, targetClass, maxDepth - 1);
+            if (deeper != IntPtr.Zero) return deeper;
+        }
+        return IntPtr.Zero;
+    }
+
+    static IntPtr SearchDefViewInTree(IntPtr hWnd, int depth) {
+        if (depth > 5) return IntPtr.Zero;
+        StringBuilder cls = new StringBuilder(256);
+        GetClassNameW(hWnd, cls, 256);
+        string cn = cls.ToString();
+        if (cn == "SHELLDLL_DefView") {
+            if (IsWindowVisible(hWnd)) {
+                IntPtr lv = FindWindowExW(hWnd, IntPtr.Zero, "SysListView32", null);
+                if (lv == IntPtr.Zero) lv = FindChildRecursive(hWnd, "SysListView32", 3);
+                if (lv != IntPtr.Zero) return lv;
+            }
+            return IntPtr.Zero;
+        }
+        IntPtr child = IntPtr.Zero;
+        while (true) {
+            child = FindWindowExW(hWnd, child, null, null);
+            if (child == IntPtr.Zero) break;
+            IntPtr hit = SearchDefViewInTree(child, depth + 1);
+            if (hit != IntPtr.Zero) return hit;
+        }
+        return IntPtr.Zero;
+    }
+
+    static bool EnumTopProc(IntPtr hWnd, IntPtr lParam) {
+        StringBuilder cls = new StringBuilder(256);
+        GetClassNameW(hWnd, cls, 256);
+        string cn = cls.ToString();
+        if (cn == "Progman" || cn == "WorkerW") {
+            if (IsWindowVisible(hWnd)) {
+                IntPtr lv = SearchDefViewInTree(hWnd, 0);
+                if (lv != IntPtr.Zero) {
+                    foundListView = lv;
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public static void Run() {
+        foundListView = IntPtr.Zero;
+        EnumWindows(EnumTopProc, IntPtr.Zero);
+        if (foundListView == IntPtr.Zero) {
+            Console.WriteLine("[]");
+            return;
+        }
+
+        AutomationElement listView = AutomationElement.FromHandle(foundListView);
+        if (listView == null) {
+            Console.WriteLine("[]");
+            return;
+        }
+
+        var items = listView.FindAll(TreeScope.Children, Condition.TrueCondition);
+        var sb = new StringBuilder("[");
+        for (int i = 0; i < items.Count; i++) {
+            var item = items[i];
+            string name = item.Current.Name ?? "";
+            var rect = item.Current.BoundingRectangle;
+            int cx = (int)(rect.X + rect.Width / 2);
+            int cy = (int)(rect.Y + rect.Height / 2);
+
+            if (i > 0) sb.Append(",");
+            var escaped = new StringBuilder();
+            foreach (char c in name) {
+                if (c == '\\\\') escaped.Append("\\\\\\\\");
+                else if (c == '"') escaped.Append("\\\\\\"");
+                else if (c < 0x20) escaped.Append(string.Format("\\\\u{0:x4}", (int)c));
+                else escaped.Append(c);
+            }
+            sb.Append("{\\"name\\":\\"" + escaped.ToString() + "\\",\\"x\\":" + cx + ",\\"y\\":" + cy + "}");
+        }
+        sb.Append("]");
+        Console.WriteLine(sb.ToString());
+    }
+}
+'@
+$tmp = Join-Path $env:TEMP "icons_ua_$PID.cs"
+Set-Content -Path $tmp -Value $csCode -Encoding UTF8
+try {
+    Add-Type -Path $tmp -ReferencedAssemblies UIAutomationClient,UIAutomationTypes,WindowsBase
+    [DesktopIconsUA]::Run()
+} catch {
+    [Console]::Error.WriteLine("ERR: " + $_.Exception.Message)
+    Console.WriteLine("[]")
+} finally {
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+}
+`;
+
+        // 编码后通过 -EncodedCommand 传递，避免引号转义问题
+        // -WindowStyle Hidden + windowsHide 双重隐藏，避免闪屏
+        const buf = Buffer.from(psScript, 'utf16le');
+        const encoded = buf.toString('base64');
+
+        const child = execFile(
+            'powershell.exe',
+            ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-OutputFormat', 'Text', '-EncodedCommand', encoded],
+            { windowsHide: true, maxBuffer: 10 * 1024 * 1024, timeout: 15000 }
+        );
+
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => { stdout += d; });
+        child.stderr.on('data', (d) => { stderr += d; });
+
+        const timer = setTimeout(() => {
+            try { child.kill(); } catch (_) {}
+            resolve([]);
+        }, 15000);
+
+        child.on('close', (code) => {
+            clearTimeout(timer);
+            if (code !== 0) {
+                console.warn('[readDesktopIconsViaPowerShell] exit code=', code, 'stderr=', stderr.slice(0, 500));
+                resolve([]);
+                return;
+            }
+            // 提取 stdout 中的 JSON 行
+            const lines = stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            for (const line of lines) {
+                if (line.startsWith('[')) {
+                    try {
+                        const arr = JSON.parse(line);
+                        if (Array.isArray(arr)) {
+                            resolve(arr);
+                            return;
+                        }
+                    } catch (_) {}
+                }
+            }
+            console.warn('[readDesktopIconsViaPowerShell] no JSON in stdout, stderr=', stderr.slice(0, 500));
+            resolve([]);
+        });
+
+        child.on('error', (e) => {
+            clearTimeout(timer);
+            console.warn('[readDesktopIconsViaPowerShell] err:', e.message);
+            resolve([]);
+        });
+    });
+}
+
+// 获取桌面图标准确位置
+// 坐标语义：返回的是图标中心点屏幕绝对坐标
+// 优先用 PowerShell + C# UIAutomation 读取 SysListView32 真实图标坐标
+// 失败/超时则降级到网格模拟
 ipcMain.handle('get-desktop-file-position', async (event, fileNameOrPath) => {
     try {
-        // fileNameOrPath 可能是文件名（前端调用）或完整路径（右键菜单→second-instance 调用）
         let filePath;
         if (path.isAbsolute(fileNameOrPath)) {
             filePath = path.resolve(fileNameOrPath.trim());
@@ -567,91 +843,78 @@ ipcMain.handle('get-desktop-file-position', async (event, fileNameOrPath) => {
 
         console.log('[get-desktop-file-position] request fileName=', fileName, 'filePath=', filePath, 'exists=', fs.existsSync(filePath));
 
-        // 调用 PowerShell 脚本获取图标位置
-        // 用 -File + 环境变量传路径（避免命令行参数编码问题和 param 块解析问题）
-        const scriptPath = path.join(__dirname, 'get_icon_pos.ps1');
-
-        const result = await new Promise((resolve) => {
-            const env = { ...process.env, ANQI_FILE_PATH: filePath };
-            execFile('powershell.exe', [
-                '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                '-File', scriptPath
-            ], { timeout: 15000, maxBuffer: 1024 * 1024, encoding: 'utf-8', env }, (err, stdout, stderr) => {
-                if (err) {
-                    console.warn('[get-desktop-file-position] exec err:', err.message, 'stderr:', stderr?.substring(0, 500));
-                    resolve(null);
-                    return;
-                }
-                try {
-                    const trimmed = stdout.trim();
-                    console.log('[get-desktop-file-position] PS stdout:', trimmed.substring(0, 300));
-                    const json = JSON.parse(trimmed);
-                    resolve(json);
-                } catch (e) {
-                    console.warn('[get-desktop-file-position] JSON parse err:', e.message, 'stdout=', stdout?.substring(0, 300));
-                    resolve(null);
-                }
-            });
-        });
-
-        // 桌面图标项尺寸（含图标+文件名文字区域，Win10/11 默认大图标视图约110x130）
-        const ITEM_W = 110;
-        const ITEM_H = 130;
-        // 目标 = 图标项中心（角色头部会和文件重叠）
-        const OFFSET_X = ITEM_W / 2;
-        const OFFSET_Y = ITEM_H / 2;
-
-        if (result && result.found) {
-            // result.x,y = 桌面 ListView 图标项左上角屏幕坐标
-            const finalX = result.x + OFFSET_X;
-            const finalY = result.y + OFFSET_Y;
-            const out = {
-                x: finalX,
-                y: finalY,
-                accurate: true,
-                lvX: result.x,
-                lvY: result.y,
-                match: result.match || 0,
-                lvname: result.lvname || ''
-            };
-            console.log('[get-desktop-file-position] OK:', JSON.stringify(out));
-            return out;
+        // ===== Step 1: 用缓存或调 PowerShell 拿真实图标坐标 =====
+        let items = null;
+        const now = Date.now();
+        if (desktopIconCache && (now - desktopIconCache.ts) < DESKTOP_ICON_CACHE_TTL) {
+            items = desktopIconCache.items;
+            console.log('[get-desktop-file-position] use cached items, count=', items.length);
+        } else {
+            console.log('[get-desktop-file-position] reading desktop icons via PowerShell...');
+            items = await readDesktopIconsViaPowerShell();
+            console.log('[get-desktop-file-position] PowerShell returned items.length=', items.length);
+            if (items.length > 0) {
+                desktopIconCache = { ts: now, items };
+                console.log('[get-desktop-file-position] first10 items:', items.slice(0, 10).map(it => ({ name: it.name, x: it.x, y: it.y })));
+            }
         }
 
-        console.warn('[get-desktop-file-position] PS fallback, result=', JSON.stringify(result), 'reason=', result && result.reason);
-        // 降级：网格模拟（按名称排序 → 行列位置 → 中心下方偏移）
+        // ===== Step 2: 3-pass 匹配文件名 =====
+        if (items.length > 0) {
+            // Pass 1: 全名匹配
+            let hit = items.find(it => it.name === fileName);
+            // Pass 2: stem 匹配（去扩展名，忽略大小写）
+            if (!hit) {
+                const stem = path.basename(fileName, path.extname(fileName)).toLowerCase();
+                hit = items.find(it => path.basename(it.name, path.extname(it.name)).toLowerCase() === stem);
+            }
+            // Pass 3: .lnk stem 匹配（桌面快捷方式可能展示为 .lnk，目标文件 stem 一致）
+            if (!hit) {
+                const stem = path.basename(fileName, path.extname(fileName)).toLowerCase();
+                hit = items.find(it => {
+                    if (!it.name.toLowerCase().endsWith('.lnk')) return false;
+                    return path.basename(it.name, '.lnk').toLowerCase() === stem;
+                });
+            }
+            if (hit) {
+                const out = { x: hit.x, y: hit.y, accurate: true, match: 1, reason: 'syslistview' };
+                console.log('[get-desktop-file-position] SysListView hit:', JSON.stringify(out));
+                return out;
+            }
+            console.log('[get-desktop-file-position] SysListView no match, fall back to grid');
+        }
+
+        // ===== Step 3: 网格降级方案 =====
         const { workArea } = screen.getPrimaryDisplay();
         const desktopPath = path.join(os.homedir(), 'Desktop');
         const entries = fs.readdirSync(desktopPath, { withFileTypes: true })
             .filter(e => e.isFile() && e.name !== 'desktop.ini' && !e.name.startsWith('.'))
             .map(e => e.name)
             .sort();
-        console.log('[get-desktop-file-position] fileName=', fileName, 'entries.length=', entries.length, 'first10=', entries.slice(0, 10));
-        // 找索引：先全名，否则 stem
+        console.log('[get-desktop-file-position] grid fallback entries.length=', entries.length);
         let idx = entries.indexOf(fileName);
         if (idx < 0) {
             const stem = path.basename(fileName, path.extname(fileName));
             idx = entries.findIndex(n => path.basename(n, path.extname(n)).toLowerCase() === stem.toLowerCase());
         }
-        console.log('[get-desktop-file-position] grid idx=', idx);
         let x, y;
         if (idx < 0) {
-            // 找不到文件索引：走到屏幕中心偏上（比右下角更合理）
+            // 找不到文件索引：走到屏幕中心偏上
             x = workArea.x + workArea.width / 2;
             y = workArea.y + workArea.height / 3;
         } else {
-            const cols = 6;
-            const iconW = 110;
-            const iconH = 130;
+            // 估算列数：基于工作区宽度（每列约 100px）
+            const cols = Math.max(1, Math.floor(workArea.width / 100));
+            const iconW = 100;
+            const iconH = 110;
             const col = idx % cols;
             const row = Math.floor(idx / cols);
-            // 左上角 + 中心（与 ListView 同款公式：图标中心）
             x = workArea.x + col * iconW + iconW / 2;
             y = workArea.y + row * iconH + iconH / 2;
-            x = Math.max(workArea.x + 100, Math.min(workArea.x + workArea.width - 100, x));
-            y = Math.max(workArea.y + 100, Math.min(workArea.y + workArea.height - 100, y));
+            x = Math.max(workArea.x + 50, Math.min(workArea.x + workArea.width - 50, x));
+            y = Math.max(workArea.y + 50, Math.min(workArea.y + workArea.height - 50, y));
         }
-        const out = { x, y, accurate: false, match: -1, reason: result && result.reason };
+        const out = { x, y, accurate: false, match: -1, reason: 'grid-fallback' };
         console.log('[get-desktop-file-position] grid fallback:', JSON.stringify(out));
         return out;
     } catch (e) {

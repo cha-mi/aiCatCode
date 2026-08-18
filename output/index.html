@@ -526,8 +526,9 @@ html, body {
     background: transparent;
     pointer-events: none;
     display: none;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
+    padding-bottom: 4px;
     z-index: 10005;
     font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
 }
@@ -725,6 +726,8 @@ const IDLE_ANIMATIONS = [
         frames: 97,
         cols: 12,
         rows: 9,
+        frameWidth: 322,
+        frameHeight: 400,
     },
     {
         name: 'groom',
@@ -732,6 +735,8 @@ const IDLE_ANIMATIONS = [
         frames: 97,
         cols: 12,
         rows: 9,
+        frameWidth: 322,
+        frameHeight: 400,
     },
 ];
 
@@ -742,6 +747,8 @@ const FEED_ANIMATION = {
     frames: 97,
     cols: 12,
     rows: 9,
+    frameWidth: 322,
+    frameHeight: 400,
 };
 
 // 铲屎动画（手动触发，清除💩状态）
@@ -751,32 +758,77 @@ const SCOOP_ANIMATION = {
     frames: 121,
     cols: 12,
     rows: 11,
+    frameWidth: 322,
+    frameHeight: 400,
 };
 
-// 咀嚼动画（删除文件时播放，表示"吃掉"文件）
+// 咀嚼动画（删除文件时播放，表示"吃掉"文件）——仅保留拖拽删除使用
 const CHEW_ANIMATION = {
     name: 'chew',
     sprite: 'chew_sprite.webp',
     frames: 241,
-    cols: 12,
-    rows: 21,
+    cols: 16,
+    rows: 16,
+    frameWidth: 322,
+    frameHeight: 400,
+};
+
+// ===== 呼叫删除：新 FX 特效动画（准星/开枪/爆炸） =====
+// （注：frames/cols/rows/frameWidth/frameHeight 等 build_fx_sprites.py 执行完毕后根据 SUMMARY 替换为实际值）
+const CROSSHAIR_ANIMATION = {
+    name: 'crosshair',
+    sprite: 'crosshair_sprite.webp',
+    frames: 97,
+    cols: 10,
+    rows: 10,
+    frameWidth: 249,
+    frameHeight: 260,
+    fps: 24,
+    iconW: 110,      // 桌面图标大小：准星/爆炸都按此覆盖
+    iconH: 130,
+};
+const SHOOT_ANIMATION = {
+    name: 'shoot',
+    sprite: 'shoot_sprite.webp',
+    frames: 145,
+    cols: 13,
+    rows: 12,
+    frameWidth: 360,
+    frameHeight: 480,
+    fps: 24,
+};
+const EXPLOSION_ANIMATION = {
+    name: 'explosion',
+    sprite: 'explosion_sprite.webp',
+    frames: 97,
+    cols: 10,
+    rows: 10,
+    frameWidth: 146,
+    frameHeight: 260,
+    fps: 24,
+    iconW: 110,      // 桌面图标大小：准星/爆炸都按此覆盖
+    iconH: 130,
 };
 
 // 走路动画（跟随鼠标移动 / 散步）
-const WALK_SCALE = 1.5;  // 走路动画比待机放大 1.5 倍
+const WALK_SCALE = 1;  // 走路动画比待机放大 1.5 倍
 const WALK_RIGHT_ANIMATION = {
     name: 'walk_right',
     sprite: 'walk_right_sprite.webp',
     frames: 241,
-    cols: 12,
-    rows: 21,
+    cols: 16,
+    rows: 16,
+    frameWidth: 476,
+    frameHeight: 400,
 };
 const WALK_LEFT_ANIMATION = {
     name: 'walk_left',
     sprite: 'walk_left_sprite.webp',
     frames: 241,
-    cols: 12,
-    rows: 21,
+    cols: 16,
+    rows: 16,
+    frameWidth: 476,
+    frameHeight: 400,
 };
 // 跟随配置
 const FOLLOW_CONFIG = {
@@ -863,8 +915,51 @@ let strollState = null;  // 散步状态（null=未散步）
 
 // 走到目标位置状态
 let walkToTarget = null;  // { x, y, callback } 目标位置和回调
+
+// 获取当前走路动画的帧尺寸（walk sprite 按原视频比例等比缩放，帧宽与 CONFIG.frameWidth 不同）
+function getWalkFrameW() {
+    const anim = currentWalkAnim || (strollState && strollState.anim);
+    return (anim && anim.frameWidth) || CONFIG.frameWidth;
+}
+function getWalkFrameH() {
+    const anim = currentWalkAnim || (strollState && strollState.anim);
+    return (anim && anim.frameHeight) || CONFIG.frameHeight;
+}
+
 // 桌面文件删除状态
 let pendingDeleteFile = null;  // 待删除的文件信息
+let pendingDeleteTargetPos = null;  // { x, y } 准星/爆炸覆盖的屏幕中心坐标（=文件图标中心）
+// 删除模式区分：true=拖拽删除(保留咀嚼动画)，false=呼叫删除(新FX动画：准星/开枪/爆炸)
+let isDragAndDropDeleteMode = false;
+
+/**
+ * 确保 currentGlobalMouse 有可用的 fallback 值
+ * 防止 main 进程首次发送 global-mouse 事件前 currentGlobalMouse 为 null 导致 walkToStep/followStep 卡死
+ */
+async function ensureGlobalMouse() {
+    if (currentGlobalMouse && typeof currentGlobalMouse.winX === 'number') return;
+    let winX = window.screenX;
+    let winY = window.screenY;
+    if (isElectron && window.electronAPI && window.electronAPI.getWindowPosition) {
+        try {
+            const p = await window.electronAPI.getWindowPosition();
+            if (p && typeof p.x === 'number') { winX = p.x; winY = p.y; }
+        } catch (_) {}
+    }
+    const winW = window.innerWidth || 360;
+    const winH = window.innerHeight || 460;
+    currentGlobalMouse = {
+        x: winX + winW / 2,
+        y: winY + winH / 2,
+        dx: 0, dy: 0,
+        winX, winY,
+        winWidth: winW, winHeight: winH,
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        isFallback: true, // 标记为 fallback 值：m.x/m.y 只是"角色中心"，不是真实鼠标位置
+    };
+    console.log('[ensureGlobalMouse] fallback set:', JSON.stringify(currentGlobalMouse));
+}
 
 // 大便堆积
 const POOP_MAX = 5;        // 最多堆积5个
@@ -961,50 +1056,99 @@ function setFrame(frameIndex) {
 }
 
 // ========== 闲置动画 ==========
+
+/**
+ * 自动检测雪碧图布局（cols/rows/frameWidth/frameHeight）
+ * 根据已知的 frameWidth/frameHeight 从图片实际像素尺寸反推 cols/rows
+ * @param anim 动画配置对象（会被原地更新 cols/rows/frameWidth/frameHeight）
+ * @param img  已加载的 Image 对象
+ */
+function autoDetectSpriteLayout(anim, img) {
+    if (!img || !img.width || !img.height) return;
+    // 已知 frameWidth/frameHeight 的情况：直接计算
+    if (anim.frameWidth && anim.frameHeight) {
+        const cols = Math.round(img.width / anim.frameWidth);
+        const rows = Math.round(img.height / anim.frameHeight);
+        if (cols > 0 && rows > 0 && cols <= 30 && rows <= 30) {
+            anim.cols = cols;
+            anim.rows = rows;
+            // frames 取配置值与实际总帧数的较小值（避免越界）
+            const totalSlots = cols * rows;
+            anim.frames = anim.frames ? Math.min(anim.frames, totalSlots) : totalSlots;
+        }
+    } else {
+        // 未知 frameWidth/frameHeight：尝试所有可能的 cols 找最合理的
+        let best = null;
+        for (let c = 1; c <= 24; c++) {
+            if (img.width % c !== 0) continue;
+            const fw = img.width / c;
+            for (let r = 1; r <= 24; r++) {
+                if (img.height % r !== 0) continue;
+                const fh = img.height / r;
+                // 帧宽高比在合理范围（0.3~3.0）
+                const ratio = fw / fh;
+                if (ratio < 0.3 || ratio > 3.0) continue;
+                const total = c * r;
+                // 选最接近 frames 的
+                if (best === null || total < best.total) {
+                    best = { cols: c, rows: r, frameWidth: fw, frameHeight: fh, total };
+                }
+            }
+        }
+        if (best) {
+            anim.cols = best.cols;
+            anim.rows = best.rows;
+            anim.frameWidth = best.frameWidth;
+            anim.frameHeight = best.frameHeight;
+            anim.frames = anim.frames ? Math.min(anim.frames, best.total) : best.total;
+        }
+    }
+    console.log(`[autoDetect] ${anim.name}: ${img.width}x${img.height} -> cols=${anim.cols} rows=${anim.rows} frame=${anim.frameWidth}x${anim.frameHeight} frames=${anim.frames}`);
+}
+
+function _preloadAnim(anim, key) {
+    const img = new Image();
+    img.onload = () => autoDetectSpriteLayout(anim, img);
+    img.src = anim.sprite;
+    if (key) idleAnimImages[key] = img;
+    else idleAnimImages[anim.name] = img;
+}
+
 function preloadIdleAnimations() {
-    // 预加载所有动画图片
-    IDLE_ANIMATIONS.forEach(anim => {
-        const img = new Image();
-        img.src = anim.sprite;
-        idleAnimImages[anim.name] = img;
-    });
-    // 预加载喂食动画（付费动作）
-    const feedImg = new Image();
-    feedImg.src = FEED_ANIMATION.sprite;
-    idleAnimImages[FEED_ANIMATION.name] = feedImg;
-    // 预加载铲屎动画
-    const scoopImg = new Image();
-    scoopImg.src = SCOOP_ANIMATION.sprite;
-    idleAnimImages[SCOOP_ANIMATION.name] = scoopImg;
-    // 预加载咀嚼动画（删除文件时播放）
-    const chewImg = new Image();
-    chewImg.src = CHEW_ANIMATION.sprite;
-    idleAnimImages[CHEW_ANIMATION.name] = chewImg;
-    // 预加载💩雪碧图
+    // 预加载所有动画图片，自动检测雪碧图布局
+    IDLE_ANIMATIONS.forEach(a => _preloadAnim(a));
+    _preloadAnim(FEED_ANIMATION);
+    _preloadAnim(SCOOP_ANIMATION);
+    _preloadAnim(CHEW_ANIMATION);
+    // FX 动画
+    _preloadAnim(CROSSHAIR_ANIMATION, 'fx-crosshair');
+    _preloadAnim(SHOOT_ANIMATION, 'fx-shoot');
+    _preloadAnim(EXPLOSION_ANIMATION, 'fx-explosion');
+    // 💩雪碧图
     const poopImg = new Image();
     poopImg.src = 'sprite_poop.webp';
     idleAnimImages['poop'] = poopImg;
-    // 预加载走路动画
-    const walkRightImg = new Image();
-    walkRightImg.src = WALK_RIGHT_ANIMATION.sprite;
-    idleAnimImages[WALK_RIGHT_ANIMATION.name] = walkRightImg;
-    const walkLeftImg = new Image();
-    walkLeftImg.src = WALK_LEFT_ANIMATION.sprite;
-    idleAnimImages[WALK_LEFT_ANIMATION.name] = walkLeftImg;
+    // 走路动画
+    _preloadAnim(WALK_RIGHT_ANIMATION);
+    _preloadAnim(WALK_LEFT_ANIMATION);
 }
 
 function setIdleAnimFrame(anim, frameIndex) {
     // 设置动画帧
     frameIndex = Math.max(0, Math.min(anim.frames - 1, frameIndex));
-    
+
     const col = frameIndex % anim.cols;
     const row = Math.floor(frameIndex / anim.cols);
-    
-    const x = -col * CONFIG.frameWidth * petScale;
-    const y = -row * CONFIG.frameHeight * petScale;
-    
+
+    // 使用动画自身的帧尺寸（兼容不同宽高比的雪碧图）
+    const fw = anim.frameWidth || CONFIG.frameWidth;
+    const fh = anim.frameHeight || CONFIG.frameHeight;
+
+    const x = -col * fw * petScale;
+    const y = -row * fh * petScale;
+
     pet.style.backgroundImage = `url('${anim.sprite}')`;
-    pet.style.backgroundSize = `${anim.cols * CONFIG.frameWidth * petScale}px ${anim.rows * CONFIG.frameHeight * petScale}px`;
+    pet.style.backgroundSize = `${anim.cols * fw * petScale}px ${anim.rows * fh * petScale}px`;
     pet.style.backgroundPosition = `${x}px ${y}px`;
 }
 
@@ -1140,7 +1284,7 @@ function playStrollAnimation() {
         anim: direction === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION,
         phase: 'out',          // 'out'=走出去, 'back'=原路返回
         startTime: Date.now(),
-        duration: 3000,        // 每段 3 秒
+        duration: 8000,        // 每段 8 秒
         startX: startX,
         startY: startY,
         frame: 0,
@@ -1149,8 +1293,10 @@ function playStrollAnimation() {
 
     // 走路放大尺寸
     const sw = petScale * WALK_SCALE;
-    pet.style.width = `${CONFIG.frameWidth * sw}px`;
-    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+    const _fw = strollState.anim.frameWidth || CONFIG.frameWidth;
+    const _fh = strollState.anim.frameHeight || CONFIG.frameHeight;
+    pet.style.width = `${_fw * sw}px`;
+    pet.style.height = `${_fh * sw}px`;
 
     showBubble(['去散步~', '走走走走~', '溜达溜达~']);
     setWalkAnimFrame(strollState.anim, 0);
@@ -1167,7 +1313,7 @@ function playStrollAnimation() {
             strollState.phase = 'back';
             strollState.startTime = Date.now();
             strollState.anim = strollState.oppositeDir === 'left' ? WALK_LEFT_ANIMATION : WALK_RIGHT_ANIMATION;
-            showBubble(['回家咯~']);
+            showBubble(['回家咯~', '我直接一个急转弯~']);
             return;
         }
         if (strollState.phase === 'back' && elapsed >= strollState.duration) {
@@ -1461,8 +1607,8 @@ function dropPoopTrailSticker() {
     const frameCenterY = winY + winH / 2;
 
     // 帧在屏幕上的左上角（帧中心 - 帧尺寸/2）
-    const frameLeft = frameCenterX - (CONFIG.frameWidth * sw) / 2;
-    const frameTop = frameCenterY - (CONFIG.frameHeight * sw) / 2;
+    const frameLeft = frameCenterX - (getWalkFrameW() * sw) / 2;
+    const frameTop = frameCenterY - (getWalkFrameH() * sw) / 2;
 
     // 猫体边缘在屏幕上的绝对坐标
     const catBodyLeft = frameLeft + CAT_BODY_LEFT * sw;
@@ -1475,7 +1621,7 @@ function dropPoopTrailSticker() {
     const stickerY = catBodyBottom;
 
     // 贴纸大小与定时掉落大便一致（80px），并跟随 petScale 缩放
-    const stickerSize = Math.round(80 * sw);
+    const stickerSize = Math.round(120 * sw);
 
     // 间距检查
     if (lastPoopTrailPos) {
@@ -1569,8 +1715,10 @@ function playEndlessStrollAnimation() {
 
     // 走路放大尺寸
     const sw = petScale * WALK_SCALE;
-    pet.style.width = `${CONFIG.frameWidth * sw}px`;
-    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+    const _fw = strollState.anim.frameWidth || CONFIG.frameWidth;
+    const _fh = strollState.anim.frameHeight || CONFIG.frameHeight;
+    pet.style.width = `${_fw * sw}px`;
+    pet.style.height = `${_fh * sw}px`;
 
     setWalkAnimFrame(strollState.anim, 0);
 
@@ -1651,10 +1799,12 @@ function setWalkAnimFrame(anim, frameIndex) {
     const col = frameIndex % anim.cols;
     const row = Math.floor(frameIndex / anim.cols);
     const sw = petScale * WALK_SCALE;
-    const x = -col * CONFIG.frameWidth * sw;
-    const y = -row * CONFIG.frameHeight * sw;
+    const fw = anim.frameWidth || CONFIG.frameWidth;
+    const fh = anim.frameHeight || CONFIG.frameHeight;
+    const x = -col * fw * sw;
+    const y = -row * fh * sw;
     pet.style.backgroundImage = `url('${anim.sprite}')`;
-    pet.style.backgroundSize = `${anim.cols * CONFIG.frameWidth * sw}px ${anim.rows * CONFIG.frameHeight * sw}px`;
+    pet.style.backgroundSize = `${anim.cols * fw * sw}px ${anim.rows * fh * sw}px`;
     pet.style.backgroundPosition = `${x}px ${y}px`;
 }
 
@@ -1669,10 +1819,12 @@ function playWalkAnimation(direction) {
         stopIdleAnimation();
     }
     currentWalkAnim = anim;
-    // 走路时放大 pet 尺寸
+    // 走路时放大 pet 尺寸（使用 walk sprite 自身帧尺寸，与 CONFIG.frameWidth 不同）
     const sw = petScale * WALK_SCALE;
-    pet.style.width = `${CONFIG.frameWidth * sw}px`;
-    pet.style.height = `${CONFIG.frameHeight * sw}px`;
+    const fw = anim.frameWidth || CONFIG.frameWidth;
+    const fh = anim.frameHeight || CONFIG.frameHeight;
+    pet.style.width = `${fw * sw}px`;
+    pet.style.height = `${fh * sw}px`;
     // 如果已经有 interval，只换帧继续（不重置 walkAnimFrame 以保持流畅）
     if (walkAnimInterval) {
         // 切换方向后，确保下一帧立即按新 sprite 渲染
@@ -1787,6 +1939,8 @@ function stopFollow() {
 
 // ========== 走到目标位置 ==========
 function walkToPosition(targetX, targetY, callback) {
+    // 先确保 currentGlobalMouse 已初始化（避免 main 还没发过鼠标事件导致 walkToStep 卡死）
+    if (!currentGlobalMouse) ensureGlobalMouse();
     console.log('[walkToPosition] target=', targetX, targetY, 'currentGlobalMouse=', currentGlobalMouse ? JSON.stringify({winX: currentGlobalMouse.winX, winY: currentGlobalMouse.winY, winW: currentGlobalMouse.winWidth, winH: currentGlobalMouse.winHeight}) : 'null');
     // 停止当前动画
     if (isFollowing) stopFollow();
@@ -1810,22 +1964,36 @@ function walkToPosition(targetX, targetY, callback) {
 }
 
 function walkToStep() {
-    if (!walkToTarget || !currentGlobalMouse) return;
+    if (!walkToTarget) return;
+    // 同步 fallback：避免 currentGlobalMouse 为 null 直接卡死
+    if (!currentGlobalMouse) {
+        const winW = window.innerWidth || 360;
+        const winH = window.innerHeight || 460;
+        currentGlobalMouse = {
+            x: window.screenX + winW / 2,
+            y: window.screenY + winH / 2,
+            dx: 0, dy: 0,
+            winX: window.screenX, winY: window.screenY,
+            winWidth: winW, winHeight: winH,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            isFallback: true,
+        };
+    }
 
     const m = currentGlobalMouse;
     const winW = m.winWidth || 360;
     const winH = m.winHeight || 460;
     const sw = petScale * WALK_SCALE;
-    const catW = CONFIG.frameWidth * sw;
-    const catH = CONFIG.frameHeight * sw;
+    const catW = getWalkFrameW() * sw;
+    const catH = getWalkFrameH() * sw;
     // 和 followStep 一致：用窗口中心作为角色中心
     const catCenterX = (m.winX ?? 0) + winW / 2;
     const catCenterY = (m.winY ?? 0) + winH / 2;
 
-    // 目标 Y 已在 main.js 里设为图标中心；这里再上移半个猫身，让头部（sprite 顶部）对准文件
-    const adjustedTargetY = walkToTarget.y - catH / 2;
+    // 走路目标位置已由调用方计算好（文件右下角），直接用
     const dx = walkToTarget.x - catCenterX;
-    const dy = adjustedTargetY - catCenterY;
+    const dy = walkToTarget.y - catCenterY;
     const dist = Math.hypot(dx, dy);
 
     // 到达目标（距离 < 15 像素算到达）
@@ -1874,7 +2042,22 @@ function walkToStep() {
 }
 
 function followStep() {
-    if (!isFollowing || !currentGlobalMouse) return;
+    if (!isFollowing) return;
+    // 同步 fallback：避免 currentGlobalMouse 为 null 直接卡死
+    if (!currentGlobalMouse) {
+        const winW = window.innerWidth || 360;
+        const winH = window.innerHeight || 460;
+        currentGlobalMouse = {
+            x: window.screenX + winW / 2,
+            y: window.screenY + winH / 2,
+            dx: 0, dy: 0,
+            winX: window.screenX, winY: window.screenY,
+            winWidth: winW, winHeight: winH,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            isFallback: true,
+        };
+    }
 
     const m = currentGlobalMouse;
     const winW = m.winWidth || window.outerWidth || 360;
@@ -1882,8 +2065,8 @@ function followStep() {
 
     // 猫身体在屏幕上的矩形（pet-container 居中于窗口，走路时放大 WALK_SCALE 倍）
     const sw = petScale * WALK_SCALE;
-    const catW = CONFIG.frameWidth * sw;
-    const catH = CONFIG.frameHeight * sw;
+    const catW = getWalkFrameW() * sw;
+    const catH = getWalkFrameH() * sw;
     const catCenterX = (m.winX ?? 0) + winW / 2;
     const catCenterY = (m.winY ?? 0) + winH / 2;
     const catLeft = catCenterX - catW / 2;
@@ -2532,55 +2715,86 @@ function closeFilePicker() {
     updateClickThrough();
 }
 
-function selectFileForDelete(file) {
+async function selectFileForDelete(file) {
     closeFilePicker();
+    // 先确保 currentGlobalMouse 已初始化（避免 main 还没发过鼠标事件导致 walkToStep 卡死）
+    ensureGlobalMouse();
     pendingDeleteFile = file;
+    isDragAndDropDeleteMode = false;  // 呼叫删除：新FX动画流程
 
     // 暂停定时动画（删除完成后恢复）
     isContextMenuDeleteFlow = true;
 
     showBubble(['去看看这个文件~']);
 
-    // 传绝对路径让 main.js 精确定位（扩展名隐藏的文件也能匹配）
+    // 文件位置统一通过 get-desktop-file-position 网格计算（不用鼠标位置，因为点击后鼠标会移动）
     const lookupPath = file.path || file.name;
-
-    const gotoPos = async () => {
-        let targetX, targetY;
-        try {
-            if (isElectron && window.electronAPI.getDesktopFilePosition) {
-                const pos = await window.electronAPI.getDesktopFilePosition(lookupPath);
-                targetX = pos.x;
-                targetY = pos.y;
-            } else {
-                throw new Error('no api');
+    let targetX, targetY;
+    try {
+        if (isElectron && window.electronAPI.getDesktopFilePosition) {
+            const gridPos = await window.electronAPI.getDesktopFilePosition(lookupPath);
+            if (gridPos) {
+                targetX = gridPos.x;
+                targetY = gridPos.y;
             }
-        } catch (e) {
-            // 降级：如果获取位置失败，再用屏幕中的合理随机位置
-            const m = currentGlobalMouse;
-            const screenW = m ? m.screenWidth : window.screen.width;
-            const screenH = m ? m.screenHeight : window.screen.height;
-            targetX = Math.random() * (screenW - 200) + 100;
-            targetY = Math.random() * (screenH * 0.5) + screenH * 0.3;
         }
+    } catch (e) {
+        console.warn('[selectFileForDelete] getDesktopFilePosition err:', e);
+    }
+    if (typeof targetX !== 'number') {
+        const m = currentGlobalMouse;
+        const screenW = (m && m.screenWidth) || window.screen.width;
+        const screenH = (m && m.screenHeight) || window.screen.height;
+        targetX = screenW / 2;
+        targetY = screenH / 3;
+    }
 
-        // 走到目标位置
-        walkToPosition(targetX, targetY, () => {
-            // 到达后弹出确认
-            showBubble(['是它吗?']);
-            deleteConfirmDialog.classList.add('show');
-            isPayDialogOpen = true;
-            updateClickThrough();
-        });
-    };
-    gotoPos();
+    // 文件位置（准星/爆炸覆盖位置）
+    const fileX = targetX;
+    const fileY = targetY;
+    // 走路目标位置 = 文件右下角区域
+    const walkX = fileX + CROSSHAIR_ANIMATION.iconW / 2;
+    const walkY = fileY + CROSSHAIR_ANIMATION.iconH / 2;
+
+    // 走到文件右下角
+    walkToPosition(walkX, walkY, () => {
+        // 到达：保存文件中心坐标（准星/爆炸都用这个位置）
+        pendingDeleteTargetPos = { x: fileX, y: fileY };
+        // 准星动画覆盖目标文件（按图标大小 110×130，无限循环直到取消/确认）
+        if (isElectron && window.electronAPI.fxPlay) {
+            window.electronAPI.fxPlay({
+                key: 'crosshair-main',
+                sprite: CROSSHAIR_ANIMATION.sprite,
+                frames: CROSSHAIR_ANIMATION.frames,
+                cols: CROSSHAIR_ANIMATION.cols,
+                rows: CROSSHAIR_ANIMATION.rows,
+                frameW: CROSSHAIR_ANIMATION.frameWidth,
+                frameH: CROSSHAIR_ANIMATION.frameHeight,
+                x: fileX,
+                y: fileY,
+                w: CROSSHAIR_ANIMATION.iconW,
+                h: CROSSHAIR_ANIMATION.iconH,
+                fps: CROSSHAIR_ANIMATION.fps,
+                loop: true,
+            }).catch(() => {});
+        }
+        // 弹出确认
+        showBubble(['是它吗?']);
+        deleteConfirmDialog.classList.add('show');
+        isPayDialogOpen = true;
+        updateClickThrough();
+    });
 }
 
 // ========== 右键菜单"呼叫安琪铲除"流程 ==========
-// 从 Windows 右键菜单触发：角色走到文件在桌面的位置，弹窗确认，咀嚼动画，删除
+// 从 Windows 右键菜单触发：角色走到鼠标位置（右键时鼠标就在文件上），弹窗确认，FX动画，删除
 async function startContextMenuDelete(filePath) {
     console.log('[startContextMenuDelete] entry, filePath=', filePath);
+    // 先确保 currentGlobalMouse 已初始化（避免 main 还没发过鼠标事件导致 walkToStep 卡死）
+    ensureGlobalMouse();
     // 暂停所有定时动画（闲置/💩），删除流程结束后恢复
     isContextMenuDeleteFlow = true;
+    isDragAndDropDeleteMode = false;  // 呼叫删除：新FX动画流程
 
     // 停止当前动画
     if (isFollowing) stopFollow();
@@ -2594,34 +2808,57 @@ async function startContextMenuDelete(filePath) {
     // 设置待删除文件（保存完整路径）
     pendingDeleteFile = { name: fileName, path: filePath };
 
-    showBubble(['收到! 去找它~']);
+    showBubble(['收到! 去找它~', '这就来']);
 
-    // 获取文件在桌面上的准确位置
-    // 注意：传完整 filePath（不是仅文件名），让 main.js 能精确路径传给PowerShell，也能fallback时用绝对路径stem匹配
-    let targetX, targetY, accurate = false;
+    // 文件位置统一通过 get-desktop-file-position 网格计算（不用鼠标位置，因为点击后鼠标会移动）
+    let targetX, targetY;
     try {
         if (isElectron && window.electronAPI.getDesktopFilePosition) {
-            const pos = await window.electronAPI.getDesktopFilePosition(filePath);
-            console.log('[startContextMenuDelete] got pos:', JSON.stringify(pos));
-            targetX = pos.x;
-            targetY = pos.y;
-            accurate = !!pos.accurate;
-        } else {
-            throw new Error('no api');
+            const gridPos = await window.electronAPI.getDesktopFilePosition(filePath);
+            if (gridPos) {
+                targetX = gridPos.x;
+                targetY = gridPos.y;
+                console.log('[startContextMenuDelete] use GRID pos (', targetX, ',', targetY, ')');
+            }
         }
     } catch (e) {
         console.warn('[startContextMenuDelete] getDesktopFilePosition err:', e);
-        // 降级：屏幕中部
-        const m = currentGlobalMouse;
-        const screenW = m ? m.screenWidth : window.screen.width;
-        const screenH = m ? m.screenHeight : window.screen.height;
-        targetX = (screenW / 2);
-        targetY = (screenH / 2);
     }
+    if (typeof targetX !== 'number') {
+        const m = currentGlobalMouse;
+        const screenW = (m && m.screenWidth) || window.screen.width;
+        const screenH = (m && m.screenHeight) || window.screen.height;
+        targetX = screenW / 2;
+        targetY = screenH / 3;
+        console.log('[startContextMenuDelete] use DEFAULT CENTER (', targetX, ',', targetY, ')');
+    }
+    // 文件位置（准星/爆炸覆盖位置）= targetX, targetY
+    const fileX = targetX;
+    const fileY = targetY;
+    // 走路目标位置 = 文件右下角区域（角色停在文件右下方）
+    const walkX = fileX + CROSSHAIR_ANIMATION.iconW / 2;
+    const walkY = fileY + CROSSHAIR_ANIMATION.iconH / 2;
 
-    console.log('[startContextMenuDelete] walk to target (', targetX, ',', targetY, ') accurate=', accurate);
-    // 走到文件位置，到达后弹窗确认
-    walkToPosition(targetX, targetY, () => {
+    // 走到文件右下角，到达后弹窗确认 + 显示准星（准星覆盖在文件上）
+    walkToPosition(walkX, walkY, () => {
+        pendingDeleteTargetPos = { x: fileX, y: fileY };
+        if (isElectron && window.electronAPI.fxPlay) {
+            window.electronAPI.fxPlay({
+                key: 'crosshair-main',
+                sprite: CROSSHAIR_ANIMATION.sprite,
+                frames: CROSSHAIR_ANIMATION.frames,
+                cols: CROSSHAIR_ANIMATION.cols,
+                rows: CROSSHAIR_ANIMATION.rows,
+                frameW: CROSSHAIR_ANIMATION.frameWidth,
+                frameH: CROSSHAIR_ANIMATION.frameHeight,
+                x: fileX,
+                y: fileY,
+                w: CROSSHAIR_ANIMATION.iconW,
+                h: CROSSHAIR_ANIMATION.iconH,
+                fps: CROSSHAIR_ANIMATION.fps,
+                loop: true,
+            }).catch(() => {});
+        }
         showBubble(['是它吗?']);
         deleteConfirmDialog.classList.add('show');
         isPayDialogOpen = true;
@@ -2632,6 +2869,7 @@ async function startContextMenuDelete(filePath) {
 // 删除流程结束：恢复定时动画计时
 function endContextMenuDeleteFlow() {
     isContextMenuDeleteFlow = false;
+    isDragAndDropDeleteMode = false;
     // 重置闲置/💩计时器，不把删除流程耗时计入
     lastMouseMoveTime = Date.now();
     lastUserInteractionTime = Date.now();
@@ -2642,33 +2880,43 @@ function cancelDelete() {
     isPayDialogOpen = false;
     updateClickThrough();
     pendingDeleteFile = null;
+    pendingDeleteTargetPos = null;
+    // 呼叫删除模式下：取消时移除准星动画（拖拽删除无准星）
+    if (!isDragAndDropDeleteMode && isElectron && window.electronAPI.fxStop) {
+        window.electronAPI.fxStop('crosshair-main').catch(() => {});
+    }
+    isDragAndDropDeleteMode = false;
     showBubble(['好吧~', '认错了~']);
     endContextMenuDeleteFlow();
 }
 
 async function confirmDelete() {
     if (!pendingDeleteFile) return;
+    // 确保 currentGlobalMouse 不为 null（开枪动画定位需要）
+    ensureGlobalMouse();
 
     const file = pendingDeleteFile;
-    console.log('[confirmDelete] begin deleting path=', file.path);
+    const dragMode = isDragAndDropDeleteMode;
+    // 先保存需要的状态，再清空全局 pending 变量
+    const savedTargetPos = pendingDeleteTargetPos;
+    console.log('[confirmDelete] mode=', dragMode ? 'DRAG-DROP (chew)' : 'CALL (fx)', 'path=', file.path, 'targetPos=', JSON.stringify(savedTargetPos));
 
     deleteConfirmDialog.classList.remove('show');
     isPayDialogOpen = false;
     updateClickThrough();
     pendingDeleteFile = null;
+    pendingDeleteTargetPos = null;
 
-    // 强制停止所有动画，确保咀嚼动画能正常播放
+    // 公共：强制停止所有动画
     if (isFollowing) stopFollow();
     if (strollState) stopStrollAnimation();
     if (walkAnimInterval) stopWalkAnimation();
     if (isIdleAnimating) stopIdleAnimation();
     isAnimating = false;
-    // 再等一帧，确保所有状态标志刷新
     await new Promise(r => setTimeout(r, 16));
 
-    // 删除 + 咀嚼，两者独立执行；都完成后才提示用户已删除
-    // 1) 删除 Promise（加超时兜底）
-    const deletePromise = Promise.race([
+    // 删除 Promise 构造函数（带超时兜底），需要时调用：p = makeDeletePromise()
+    const makeDeletePromise = () => Promise.race([
         (async () => {
             try {
                 if (!isElectron || !window.electronAPI.deleteFile) {
@@ -2688,63 +2936,185 @@ async function confirmDelete() {
         }, 15000))
     ]);
 
-    // 2) 咀嚼 Promise：手写帧循环，绕过 playIdleAnimation 守卫（保证一定播放）
-    const chewPromise = new Promise(resolve => {
-        // 先强制清理所有动画状态（防止走路/闲置 interval 覆盖咀嚼帧）
-        if (isFollowing) stopFollow();
-        if (strollState) stopStrollAnimation();
-        if (walkAnimInterval) stopWalkAnimation();
-        if (isIdleAnimating) stopIdleAnimation();
-        isIdleAnimating = false;
-        isAnimating = false;
-        isManualAnim = false;
+    let result;
+    let successMsgs = null;
+    let failMsg = null;
 
-        const anim = CHEW_ANIMATION;
-        const fps = CONFIG.animFps || 24;
-        const frameInterval = 1000 / fps;
-        let frame = 0;
-        let chewInterval = null;
-        let done = false;
-        const finish = () => {
-            if (done) return;
-            done = true;
-            if (chewInterval) { clearInterval(chewInterval); chewInterval = null; }
-            // 恢复待机 sprite
-            const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
-            pet.style.backgroundImage = `url('${restoreSprite}')`;
-            pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
-            currentFrame = -1;
-            setFrame(lastFrame);
-            resolve();
-        };
-        chewInterval = setInterval(() => {
-            if (frame >= anim.frames) { finish(); return; }
-            setIdleAnimFrame(anim, frame);
-            frame++;
-        }, frameInterval);
-        console.log('[confirmDelete] chew playing inline, frames=', anim.frames, 'intervalMs=', frameInterval);
-    });
+    if (dragMode) {
+        // ============= 拖拽删除：原咀嚼动画流程（保持不变） =============
+        // 拖拽模式：删除与咀嚼并行执行（咀嚼必须完成再提示 = 项目约束）
+        const deletePromise = makeDeletePromise();
+        const chewPromise = new Promise(resolve => {
+            if (isFollowing) stopFollow();
+            if (strollState) stopStrollAnimation();
+            if (walkAnimInterval) stopWalkAnimation();
+            if (isIdleAnimating) stopIdleAnimation();
+            isIdleAnimating = false;
+            isAnimating = false;
+            isManualAnim = false;
 
-    // 3) 两者都完成后再显示结果（咀嚼结束提示已删除 = 用户要求）
-    await chewPromise;
-    const result = await deletePromise;
-    console.log('[confirmDelete] both complete, result:', JSON.stringify(result));
+            const anim = CHEW_ANIMATION;
+            const fps = CONFIG.animFps || 24;
+            const frameInterval = 1000 / fps;
+            let frame = 0;
+            let chewInterval = null;
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                if (chewInterval) { clearInterval(chewInterval); chewInterval = null; }
+                const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+                pet.style.backgroundImage = `url('${restoreSprite}')`;
+                pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+                currentFrame = -1;
+                setFrame(lastFrame);
+                resolve();
+            };
+            chewInterval = setInterval(() => {
+                if (frame >= anim.frames) { finish(); return; }
+                setIdleAnimFrame(anim, frame);
+                frame++;
+            }, frameInterval);
+            console.log('[confirmDelete][DRAG] chew playing inline, frames=', anim.frames, 'intervalMs=', frameInterval);
+        });
+
+        await chewPromise;
+        result = await deletePromise;
+    } else {
+        // ============= 呼叫删除：新 FX 动画（准星→开枪→爆炸）流程 =============
+        // 步骤 1：移除准星动画
+        if (isElectron && window.electronAPI.fxStop) {
+            window.electronAPI.fxStop('crosshair-main').catch(() => {});
+        }
+
+        // 步骤 2：角色位置播放开枪动画（大小受 petScale 影响，底部对齐）
+        const m = currentGlobalMouse;
+        const winW = m ? (m.winWidth || 360) : window.innerWidth || 360;
+        const winH = m ? (m.winHeight || 460) : window.innerHeight || 460;
+        const catCenterX = (m ? (m.winX ?? 0) : (window.screenX + 0)) + winW / 2;
+        const catCenterY = (m ? (m.winY ?? 0) : (window.screenY + 0)) + winH / 2;
+        // 角色实际显示尺寸
+        const catDisplayW = CONFIG.frameWidth * petScale;
+        const catDisplayH = CONFIG.frameHeight * petScale;
+        // shoot 动画按角色身高等比缩放（SHOOT frame 高 480 对应角色 frame 高 400，比例 1.2）
+        const shootScale = petScale; // shoot 中"猫的部分"与角色同高
+        const shootW = Math.max(32, Math.round(SHOOT_ANIMATION.frameWidth * shootScale));
+        const shootH = Math.max(32, Math.round(SHOOT_ANIMATION.frameHeight * shootScale));
+        // 底部对齐：角色底部 = shoot 底部；角色底部在 catCenterY + catDisplayH/2
+        // shoot 中心 Y = (角色底部) - shootH/2 = catCenterY + catDisplayH/2 - shootH/2
+        const shootCenterX = catCenterX; // 水平居中
+        const shootCenterY = catCenterY + (catDisplayH - shootH) / 2;
+        console.log('[confirmDelete][CALL] shoot FX: catCenter=(' + catCenterX + ',' + catCenterY + '), catDisplay=' + catDisplayW + 'x' + catDisplayH + ', shootSize=' + shootW + 'x' + shootH + ', shootCenter=(' + shootCenterX + ',' + shootCenterY + '), petScale=' + petScale);
+
+        // 隐藏待机主体（开枪动画中包含角色形象，避免重叠）
+        pet.style.opacity = '0';
+
+        if (isElectron && window.electronAPI.fxPlay) {
+            window.electronAPI.fxPlay({
+                key: 'shoot-main',
+                sprite: SHOOT_ANIMATION.sprite,
+                frames: SHOOT_ANIMATION.frames,
+                cols: SHOOT_ANIMATION.cols,
+                rows: SHOOT_ANIMATION.rows,
+                frameW: SHOOT_ANIMATION.frameWidth,
+                frameH: SHOOT_ANIMATION.frameHeight,
+                x: shootCenterX,
+                y: shootCenterY,
+                w: shootW,
+                h: shootH,
+                fps: SHOOT_ANIMATION.fps,
+                loop: false,
+            }).catch(() => {});
+        }
+        const shootPromise = new Promise(resolve => {
+            let settled = false;
+            const done = () => { if (settled) return; settled = true; resolve(); };
+            _onShootEnd = done;
+            const safety = Math.max(1500, Math.min(8000,
+                Math.ceil((SHOOT_ANIMATION.frames + 3) * 1000 / (SHOOT_ANIMATION.fps || 24))));
+            setTimeout(done, safety);
+        });
+        await shootPromise;
+        console.log('[confirmDelete][CALL] shoot animation complete');
+        if (isElectron && window.electronAPI.fxStop) {
+            window.electronAPI.fxStop('shoot-main').catch(() => {});
+        }
+        // 恢复待机主体可见
+        pet.style.opacity = '1';
+
+        // 步骤 3：爆炸动画（文件位置，110×130） + 同时开始删除（用户要求）
+        const expX = savedTargetPos ? savedTargetPos.x : catCenterX;
+        const expY = savedTargetPos ? savedTargetPos.y : catCenterY;
+        if (isElectron && window.electronAPI.fxPlay) {
+            window.electronAPI.fxPlay({
+                key: 'explosion-main',
+                sprite: EXPLOSION_ANIMATION.sprite,
+                frames: EXPLOSION_ANIMATION.frames,
+                cols: EXPLOSION_ANIMATION.cols,
+                rows: EXPLOSION_ANIMATION.rows,
+                frameW: EXPLOSION_ANIMATION.frameWidth,
+                frameH: EXPLOSION_ANIMATION.frameHeight,
+                x: expX,
+                y: expY,
+                w: CROSSHAIR_ANIMATION.iconW,
+                h: CROSSHAIR_ANIMATION.iconH,
+                fps: EXPLOSION_ANIMATION.fps,
+                loop: false,
+            }).catch(() => {});
+        }
+        // 删除在此启动（与爆炸同时）
+        const deletePromise = makeDeletePromise();
+        const explosionPromise = new Promise(resolve => {
+            let settled = false;
+            const done = () => { if (settled) return; settled = true; resolve(); };
+            _onExplosionEnd = done;
+            const safety = Math.max(1500, Math.min(8000,
+                Math.ceil((EXPLOSION_ANIMATION.frames + 3) * 1000 / (EXPLOSION_ANIMATION.fps || 24))));
+            setTimeout(done, safety);
+        });
+
+        // 爆炸 + 删除都完成才继续
+        const [r1] = await Promise.all([deletePromise, explosionPromise]);
+        result = r1;
+        console.log('[confirmDelete][CALL] explosion + delete both complete');
+        // 清理所有 FX 动画
+        if (isElectron && window.electronAPI.fxStopAll) {
+            window.electronAPI.fxStopAll().catch(() => {});
+        }
+        // 恢复待机 sprite
+        const restoreSprite = isPoopMode ? 'sprite_poop.webp' : 'sprite.webp';
+        pet.style.backgroundImage = `url('${restoreSprite}')`;
+        pet.style.backgroundSize = `${CONFIG.spriteCols * CONFIG.frameWidth * petScale}px ${CONFIG.spriteRows * CONFIG.frameHeight * petScale}px`;
+        currentFrame = -1;
+        setFrame(lastFrame);
+    }
+
+    // ========== 结果提示（两种模式共用） ==========
     if (result.success) {
-        let successMsgs;
         if (result.method === 'app-trash') {
-            successMsgs = ['已帮你收走啦~', '(移到安琪临时区)'];
-            console.log('[destroy] 已移动到安琪临时回收站:', result.movedTo);
+            successMsgs = dragMode ?
+                ['已帮你收走啦~', '(移到安琪临时区)'] :
+                ['文件已摧毁~', '(移到安琪临时区)'];
         } else if (result.method === 'powershell') {
-            successMsgs = ['已帮你删掉啦~', '进回收站啦~'];
+            successMsgs = dragMode ?
+                ['已帮你删掉啦~', '进回收站啦~'] :
+                ['文件已摧毁~', '进回收站啦~'];
         } else {
-            successMsgs = ['已帮你删掉啦~', '干净了~'];
+            successMsgs = dragMode ?
+                ['已帮你删掉啦~', '干净了~'] :
+                ['文件已摧毁~', '干净了~'];
         }
         showBubble(successMsgs);
     } else {
         console.error('deleteFile failed:', result.error, 'path:', file.path);
-        showBubble(['摧毁失败呀...', (result.error && result.error.length < 20 ? result.error : '出了点问题~')]);
+        failMsg = (result.error && result.error.length < 20 ? result.error : '出了点问题~');
+        showBubble(dragMode ?
+            ['摧毁失败呀...', failMsg] :
+            ['摧毁失败呀...', failMsg]);
     }
-    // 删除流程结束，恢复定时动画
+
+    // 两种模式都要清理标志并恢复定时动画
+    isDragAndDropDeleteMode = false;
     endContextMenuDeleteFlow();
 }
 
@@ -2834,43 +3204,49 @@ function hasFileInDrag(e) {
 
 function handleDroppedFileForDestroy(file) {
     pendingDeleteFile = file;
+    isDragAndDropDeleteMode = true;  // 拖拽删除：保留咀嚼动画流程
 
-    showBubble(['收到! 我去处理~', '走到位置看看~']);
+    showBubble(['摧毁它吗?']);
+    deleteConfirmDialog.classList.add('show');
+    isPayDialogOpen = true;
+    updateClickThrough();
+
+    // showBubble(['收到! 我去处理~', '走到位置看看~']);
 
     // 根据被拖文件的路径，结合当前鼠标位置决定走向
-    const gotoPos = async () => {
-        let targetX, targetY;
-        // 优先用当前拖拽释放时的全局鼠标位置（更接近真实文件位置）
-        const m = currentGlobalMouse;
-        if (m && m.x && m.y) {
-            targetX = m.x;
-            targetY = m.y;
-        } else if (isElectron && window.electronAPI.getDesktopFilePosition) {
-            try {
-                const pos = await window.electronAPI.getDesktopFilePosition(file.name);
-                targetX = pos.x;
-                targetY = pos.y;
-            } catch (e) {
-                const screenW = window.screen.width;
-                const screenH = window.screen.height;
-                targetX = screenW / 2;
-                targetY = screenH / 2;
-            }
-        } else {
-            const screenW = window.screen.width;
-            const screenH = window.screen.height;
-            targetX = screenW / 2;
-            targetY = screenH / 2;
-        }
+    // const gotoPos = async () => {
+    //     let targetX, targetY;
+    //     // 优先用当前拖拽释放时的全局鼠标位置（更接近真实文件位置）
+    //     const m = currentGlobalMouse;
+    //     if (m && m.x && m.y) {
+    //         targetX = m.x;
+    //         targetY = m.y;
+    //     } else if (isElectron && window.electronAPI.getDesktopFilePosition) {
+    //         try {
+    //             const pos = await window.electronAPI.getDesktopFilePosition(file.name);
+    //             targetX = pos.x;
+    //             targetY = pos.y;
+    //         } catch (e) {
+    //             const screenW = window.screen.width;
+    //             const screenH = window.screen.height;
+    //             targetX = screenW / 2;
+    //             targetY = screenH / 2;
+    //         }
+    //     } else {
+    //         const screenW = window.screen.width;
+    //         const screenH = window.screen.height;
+    //         targetX = screenW / 2;
+    //         targetY = screenH / 2;
+    //     }
 
-        walkToPosition(targetX, targetY, () => {
-            showBubble(['摧毁它吗?']);
-            deleteConfirmDialog.classList.add('show');
-            isPayDialogOpen = true;
-            updateClickThrough();
-        });
-    };
-    gotoPos();
+    //     walkToPosition(targetX, targetY, () => {
+    //         showBubble(['摧毁它吗?']);
+    //         deleteConfirmDialog.classList.add('show');
+    //         isPayDialogOpen = true;
+    //         updateClickThrough();
+    //     });
+    // };
+    // gotoPos();
 }
 
 // ========== 喂食猫条（付费动作） ==========
@@ -2899,7 +3275,7 @@ function confirmPayAndFeed() {
 // ========== 初始化 ==========
 function init() {
     // 设置初始大小（约为原始尺寸的60%）
-    petScale = 0.6;
+    petScale = 0.3;
     const initWidth = CONFIG.frameWidth * petScale;
     const initHeight = CONFIG.frameHeight * petScale;
     pet.style.width = `${initWidth}px`;
@@ -2965,7 +3341,8 @@ function init() {
     if (isElectron && window.electronAPI.onGlobalMouseMove) {
         window.electronAPI.onGlobalMouseMove((data) => {
             // 始终缓存最新全局鼠标位置（跟随模式每帧移动、触碰检测需要）
-            currentGlobalMouse = data;
+            // 标记为真实数据：isFallback = false，isFallback 缺省时视作真实（兼容 main 侧）
+            currentGlobalMouse = Object.assign({}, data, { isFallback: false });
             // 非跟随/非走路时，做转头跟踪
             updateDirectionFromGlobal(data.dx, data.dy);
         });
@@ -2977,7 +3354,25 @@ function init() {
             startContextMenuDelete(filePath);
         });
     }
+
+    // 监听 FX 一次性动画播放结束（开枪→爆炸衔接需要）
+    if (isElectron && window.electronAPI.onFxPlayEnded) {
+        window.electronAPI.onFxPlayEnded(({ key }) => {
+            console.log('[fx-ended] key=', key);
+            if (key === 'shoot-main' && typeof _onShootEnd === 'function') {
+                const fn = _onShootEnd; _onShootEnd = null; fn();
+            } else if (key === 'explosion-main' && typeof _onExplosionEnd === 'function') {
+                const fn = _onExplosionEnd; _onExplosionEnd = null; fn();
+            }
+        });
+    }
+
+    // 初始化 currentGlobalMouse 兜底值（避免 main 还没推送鼠标事件就触发删除，导致 walkToStep 卡死）
+    ensureGlobalMouse();
 }
+// 全局一次性回调钩子（开枪/爆炸结束时触发）
+let _onShootEnd = null;
+let _onExplosionEnd = null;
 
 init();
 </script>

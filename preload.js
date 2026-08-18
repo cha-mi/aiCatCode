@@ -34,4 +34,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 调试：F12 切换 DevTools（独立窗口）+ 临时取消置顶/穿透，便于点击 DevTools
     toggleDevTools: () => ipcRenderer.invoke('toggle-dev-tools'),
+
+    // 全屏特效覆盖层：准星/爆炸/开枪 sprite 动画
+    fxPlay: (cfg) => ipcRenderer.invoke('fx-play', cfg),
+    fxStop: (key) => ipcRenderer.invoke('fx-stop', { key }),
+    fxStopAll: () => ipcRenderer.invoke('fx-stop-all'),
+    onFxPlayEnded: (callback) => ipcRenderer.on('fx-play-ended', (e, data) => callback(data)),
 });

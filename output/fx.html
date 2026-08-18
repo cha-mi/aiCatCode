@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    -webkit-app-region: no-drag;
+}
+#fx-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+/* 每个特效元素：用 background-position 切换 sprite 帧 */
+.fx-elem {
+    position: absolute;
+    background-repeat: no-repeat;
+    background-color: transparent;
+    image-rendering: auto;
+    pointer-events: none;
+    will-change: background-position, opacity;
+}
+</style>
+</head>
+<body>
+<div id="fx-layer"></div>
+<script>
+// 已加载特效 key -> { el, interval, fps, frames, cols, frameW, frameH, durationMs }
+const fxSlots = {};
+
+function stopFx(key) {
+    const s = fxSlots[key];
+    if (!s) return;
+    if (s.interval) { clearInterval(s.interval); s.interval = null; }
+    if (s.el && s.el.parentNode) s.el.parentNode.removeChild(s.el);
+    delete fxSlots[key];
+}
+window.fxAPI.onStopAll(() => {
+    Object.keys(fxSlots).forEach(stopFx);
+});
+window.fxAPI.onStop(({ key }) => { stopFx(key); });
+
+/**
+ * 播放 sprite 动画
+ *  @param key        唯一标识（如 crosshair/expose/shoot-slot-1）
+ *  @param sprite     图片URL（如 crosshair_sprite.webp）
+ *  @param frames     帧数
+ *  @param cols       sprite 列数
+ *  @param rows       sprite 行数
+ *  @param frameW/frameH 单帧尺寸
+ *  @param x, y       屏幕绝对坐标中心点（窗口层负责换算到 fx-window 相对坐标）
+ *  @param w, h       显示尺寸（按 1x，130x130 表示图标大小）
+ *  @param fps        播放帧率
+ *  @param loop       true 循环（准星需要直到被 stop）；false 播一次自动消失并回调
+ *  @param origin     对齐方式（默认 center：x,y 是中心点）
+ */
+window.fxAPI.onPlay((cfg) => {
+    if (!cfg || !cfg.key || !cfg.sprite) return;
+    stopFx(cfg.key);
+
+    const layer = document.getElementById('fx-layer');
+    if (!layer) return;
+
+    const el = document.createElement('div');
+    el.className = 'fx-elem';
+    el.style.backgroundImage = `url('${cfg.sprite}')`;
+    const boxW = cfg.w || 110;
+    const boxH = cfg.h || 130;
+
+    // 先设置背景图，用实际图片尺寸自动检测 cols/rows/frameW/frameH
+    const img = new Image();
+    img.onload = () => {
+        // 自动检测雪碧图布局
+        let fW = cfg.frameW;
+        let fH = cfg.frameH;
+        let cols = cfg.cols;
+        let rows = cfg.rows;
+        let totalFrames = cfg.frames;
+
+        if (fW && fH) {
+            // 已知帧尺寸：从图片实际尺寸反推 cols/rows
+            const detCols = Math.round(img.width / fW);
+            const detRows = Math.round(img.height / fH);
+            if (detCols > 0 && detRows > 0) {
+                cols = detCols;
+                rows = detRows;
+                const totalSlots = cols * rows;
+                totalFrames = totalFrames ? Math.min(totalFrames, totalSlots) : totalSlots;
+            }
+        }
+        if (!fW || !fH || !cols || !rows) {
+            // 未知帧尺寸：尝试所有可能找最合理的
+            let best = null;
+            for (let c = 1; c <= 24; c++) {
+                if (img.width % c !== 0) continue;
+                const fw = img.width / c;
+                for (let r = 1; r <= 24; r++) {
+                    if (img.height % r !== 0) continue;
+                    const fh = img.height / r;
+                    const ratio = fw / fh;
+                    if (ratio < 0.3 || ratio > 3.0) continue;
+                    const total = c * r;
+                    if (best === null || total < best.total) {
+                        best = { cols: c, rows: r, frameW: fw, frameH: fh, total };
+                    }
+                }
+            }
+            if (best) {
+                cols = best.cols;
+                rows = best.rows;
+                fW = best.frameW;
+                fH = best.frameH;
+                totalFrames = totalFrames ? Math.min(totalFrames, best.total) : best.total;
+            }
+        }
+        console.log(`[fx autoDetect] ${cfg.key}: ${img.width}x${img.height} -> cols=${cols} rows=${rows} frame=${fW}x${fH} frames=${totalFrames}`);
+
+        // contain：按帧比例等比缩放到盒子内
+        const scaleFit = Math.min(boxW / fW, boxH / fH);
+        const renderW = Math.max(1, Math.round(fW * scaleFit));
+        const renderH = Math.max(1, Math.round(fH * scaleFit));
+
+        el.style.width = renderW + 'px';
+        el.style.height = renderH + 'px';
+        el.style.backgroundSize = `${cols * renderW}px ${rows * renderH}px`;
+
+        // 元素中心对齐到 (x, y)
+        const winX = cfg._winX ?? 0;
+        const winY = cfg._winY ?? 0;
+        el.style.left = (cfg.x - winX - renderW / 2) + 'px';
+        el.style.top  = (cfg.y - winY - renderH / 2) + 'px';
+
+        const fps = cfg.fps || 24;
+        const frameInterval = Math.max(16, Math.floor(1000 / fps));
+        let frame = 0;
+        const total = totalFrames || 1;
+
+        function applyFrame(f) {
+            const c = f % cols;
+            const r = Math.floor(f / cols);
+            el.style.backgroundPosition = `${-c * renderW}px ${-r * renderH}px`;
+        }
+        applyFrame(0);
+
+        const slot = { el, interval: null, frames: total };
+        fxSlots[cfg.key] = slot;
+
+        if (total <= 1) return;
+
+        slot.interval = setInterval(() => {
+            frame++;
+            if (cfg.loop) {
+                applyFrame(frame % total);
+            } else {
+                if (frame >= total) {
+                    clearInterval(slot.interval);
+                    slot.interval = null;
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                    delete fxSlots[cfg.key];
+                    if (window.fxAPI && window.fxAPI.notifyPlayEnd) {
+                        try { window.fxAPI.notifyPlayEnd(cfg.key); } catch(_) {}
+                    }
+                    return;
+                }
+                applyFrame(frame);
+            }
+        }, frameInterval);
+    };
+    img.src = cfg.sprite;
+
+    // 先放一个空元素占位（图片加载后填充内容）
+    layer.appendChild(el);
+});
+</script>
+</body>
+</html>

@@ -1,11 +1,14 @@
 {
   "name": "desktop-pet",
-  "version": "3.1.1",
+  "version": "1.0.0",
   "description": "桌面宠物",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "build:sprites": "python -u build_sprites.py",
+    "build:sprites:only": "python -u build_sprites.py --list",
     "build": "electron-builder --win --x64",
+    "build:all": "python -u build_sprites.py && electron-builder --win --x64",
     "publish": "electron-builder --win --x64 --publish always"
   },
   "build": {
@@ -29,9 +32,8 @@
     "files": [
       "main.js",
       "preload.js",
+      "fx_preload.js",
       "sticker_preload.js",
-      "get_icon_pos.ps1",
-      "anqi_delete.ps1",
       "installer.nsh",
       "icon.ico",
       {
@@ -39,6 +41,7 @@
         "to": "output",
         "filter": [
           "index.html",
+          "fx.html",
           "sticker.html",
           "sprite.webp",
           "sprite_poop.webp",
@@ -49,6 +52,9 @@
           "chew_sprite.webp",
           "walk_right_sprite.webp",
           "walk_left_sprite.webp",
+          "crosshair_sprite.webp",
+          "shoot_sprite.webp",
+          "explosion_sprite.webp",
           "poop_icon.webp",
           "wechatPayCode.jpg"
         ]
@@ -60,7 +66,7 @@
       "en-US"
     ],
     "directories": {
-      "output": "dist13"
+      "output": "dist"
     }
   },
   "devDependencies": {

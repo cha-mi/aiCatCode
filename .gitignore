@@ -23,12 +23,11 @@ __pycache__/
 *.pyo
 
 # ========== 视频/帧素材（体积大，不在 git 中管理） ==========
-video/
-frames/
-frames_new/
-*.mp4
-*.avi
-*.mov
+#video/
+#frames/
+#*.mp4
+#*.avi
+#*.mov
 
 # ========== 调试/临时文件 ==========
 output/debug_*

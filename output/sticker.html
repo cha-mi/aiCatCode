@@ -33,33 +33,80 @@ html, body {
     animation: poopPopIn 0.25s cubic-bezier(.3, 1.4, .5, 1) both;
 }
 
+/* 百倍彩蛋贴纸：更夸张的弹出动画 */
+.poop-sticker-giant {
+    opacity: 0.88;
+    filter: drop-shadow(4px 8px 12px rgba(0,0,0,0.4));
+    animation: poopGiantPopIn 0.6s cubic-bezier(.2, 1.2, .4, 1) both;
+}
+
 @keyframes poopPopIn {
     from { transform: scale(0.2) rotate(-30deg); opacity: 0; }
     to   { transform: scale(1) rotate(var(--rot, 0deg)); opacity: 0.92; }
+}
+
+@keyframes poopGiantPopIn {
+    from { transform: scale(0.05) rotate(-60deg); opacity: 0; }
+    to   { transform: scale(1) rotate(var(--rot, 0deg)); opacity: 0.88; }
 }
 </style>
 </head>
 <body>
 <div id="sticker-layer"></div>
 <script>
-window.stickerAPI.onDropSticker(({ x, y, rotation, size }) => {
-    const layer = document.getElementById('sticker-layer');
-    if (!layer) return;
+// ========== 百倍贴纸彩蛋状态 ==========
+const GIANT_MULTIPLIER = 8;  // 倍数
+const GIANT_THRESHOLD = 50;   // 累计多少个原始贴纸后触发
+let normalStickerCount = 0;    // 当前累计的原始大小贴纸数
+let pendingGiant = false;      // 下一个贴纸是否为百倍贴纸
+
+function createSticker(x, y, rotation, size, isGiant) {
     const s = document.createElement('div');
-    s.className = 'poop-sticker';
+    s.className = isGiant ? 'poop-sticker poop-sticker-giant' : 'poop-sticker';
     const sz = size || 56;
     s.style.width = sz + 'px';
     s.style.height = sz + 'px';
     s.style.setProperty('--rot', (rotation || 0) + 'deg');
     s.style.left = Math.round(x - sz / 2) + 'px';
     s.style.top = Math.round(y - sz / 2) + 'px';
-    layer.appendChild(s);
+    return s;
+}
+
+window.stickerAPI.onDropSticker(({ x, y, rotation, size }) => {
+    const layer = document.getElementById('sticker-layer');
+    if (!layer) return;
+
+    if (pendingGiant) {
+        // 生成百倍贴纸
+        const giantSize = (size || 56) * GIANT_MULTIPLIER;
+        const s = createSticker(x, y, rotation, giantSize, true);
+        layer.appendChild(s);
+        // 百倍贴纸生成后：重新计数，下一个恢复原始大小
+        pendingGiant = false;
+        normalStickerCount = 0;
+    } else {
+        // 生成原始大小贴纸
+        const s = createSticker(x, y, rotation, size, false);
+        layer.appendChild(s);
+        normalStickerCount++;
+
+        // 累计达到阈值：清除所有原始大小贴纸，下一个变成百倍
+        if (normalStickerCount >= GIANT_THRESHOLD) {
+            const normalStickers = layer.querySelectorAll('.poop-sticker:not(.poop-sticker-giant)');
+            normalStickers.forEach(el => el.remove());
+            pendingGiant = true;
+            normalStickerCount = 0;
+        }
+    }
 });
 
 window.stickerAPI.onClearStickers(() => {
     const layer = document.getElementById('sticker-layer');
     if (!layer) return;
     while (layer.firstChild) layer.removeChild(layer.firstChild);
+    // 重置彩蛋状态
+    normalStickerCount = 0;
+    pendingGiant = false;
 });
 </script>
 </body>
