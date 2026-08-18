@@ -29,6 +29,9 @@ __pycache__/
 #*.avi
 #*.mov
 
+# ========== Electron 运行时用户数据（含本地存储/会话，有隐私风险） ==========
+.tmp-userdata/
+
 # ========== 调试/临时文件 ==========
 output/debug_*
 output/*.npy
